@@ -6,39 +6,52 @@ not slow, it achieves a nice API through reflection and recursion, so not the sa
 ###  Usage
 Example:
 ```go
-// arrange
-authorizeUpdate := func(userId string) error {
+authorizeUpdate := func(_ context.Context, userId string) error {
 	if userId != "abc123" {
 		return errors.New("can only update user abc123")
 	}
 	return nil
 }
 
-doLogic := func(_ context.Context, _ *proplv1.UpdateUserRequest) error {
-	// do some user update logic here
+doLogic := func(_ context.Context, msg *proplv1.UpdateUserRequest) error {
+	if msg.GetUser().GetLastName() == "" {
+		msg.GetUser().LastName = "NA"
+	}
 	return nil
 }
 
-// create a set of policies and actions for the current request
-s := soldr.ForSubject(req, req.GetUpdateMask().Paths...).
-	// an action that gets run before request validation and returns early if an err occurrs
-	WithValidationGateAction(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
-		return authorizeUpdate(msg.GetUser().GetId())
+req := &proplv1.UpdateUserRequest{
+	User: &proplv1.User{
+		FirstName: "bob",
+		Id:        "123abc",
+		PrimaryAddress: &proplv1.Address{
+			Line1: "a",
+			Line2: "b",
+		},
+	},
+	UpdateMask: &fieldmaskpb.FieldMask{
+		Paths: []string{"first_name", "last_name"},
+	},
+}
+
+p := ForSubject(req, req.GetUpdateMask().Paths...).
+	BeforeValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
+		return authorizeUpdate(ctx, msg.GetUser().GetId())
 	}).
-	// create a formatted error for the given label and value if value is zero
 	AssertNonZero("user.id", req.GetUser().GetId()).
-	// can gracefully handle non-existent labels or nil values
-	AssertNonZero("some.fake", nil).
-	// create a formatted error for the given label and value if label is included in mask and value is zero
 	AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
 	AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
 	AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
-	WithPostValidationAction(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
+	OnSuccess(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
 		return doLogic(ctx, msg)
 	})
 
 // act
-err := s.E(context.Background())
+err := p.E(context.Background())
+
+// assert
+assert.NoError(t, err)
+assert.Equal(t, req.GetUser().GetLastName(), "NA")
 ```
 Any field on the message not specified in the request policy does not get evaluated.
 

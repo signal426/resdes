@@ -17,6 +17,11 @@ type PolicyActionOption func(*TraitPolicy)
 // execution
 type FaultMap map[string]error
 
+func (f FaultMap) Contains(subject string) (error, bool) {
+	err, ok := f[subject]
+	return err, ok
+}
+
 // ConditionAssertion is a function that can be applied to a policy
 // with which it can ensure the subject is in the right state
 // before running an evaluation

@@ -167,11 +167,6 @@ func (p *Subject[T]) OnSuccess(act Action[T]) *Subject[T] {
 	return p
 }
 
-func (p *Subject[T]) PostValidation(act Action[T]) *Subject[T] {
-	p.postAction = act
-	return p
-}
-
 // CustomErrResultHandler call this before calling E() or Evaluate() if you want to override
 // the errors that are output from the policy execution
 func (s *Subject[T]) CustomFaultHandler(e FaultHandler) *Subject[T] {
@@ -225,11 +220,14 @@ func (s *Subject[T]) postValidation(ctx context.Context) *Fault {
 	return nil
 }
 
-func (s *Subject[T]) toError(faults []*Fault) error {
+func (s *Subject[T]) err(f []*Fault) error {
 	if s.fh == nil {
 		s.fh = newDefaultFaultHandler()
 	}
-	return s.fh.ToError(faults)
+	if len(f) == 0 {
+		return nil
+	}
+	return s.fh.ToError(f)
 }
 
 // Evaluate checks each declared policy and returns an error describing
@@ -238,30 +236,23 @@ func (s *Subject[T]) toError(faults []*Fault) error {
 //
 // To use your own infractionsHandler, specify a handler using WithInfractionsHandler.
 func (s *Subject[T]) Evaluate(ctx context.Context) error {
-	faults := []*Fault{}
-
 	// if any pre-field-eval actions are set, run them
 	if err := s.init(ctx); err != nil {
-		faults = append(faults, err)
-	} else {
-		// execute the field policies
-		allFaults := s.pm.ExecuteAllPolicies(ctx, s.message)
-		for subject, fault := range allFaults {
-			faults = append(faults, FieldFault(subject, fault))
-		}
+		return s.fh.ToError([]*Fault{err})
+	}
 
-		// validation passes, run a success action if set
-		if len(faults) == 0 {
-			if successFault := s.onSuccess(ctx); successFault != nil {
-				faults = append(faults, successFault)
-			}
+	// assert field traits based on their condition in the message
+	faults := []*Fault{}
+	allFaults := s.pm.ExecuteAllPolicies(ctx, s.message)
+	for subject, fault := range allFaults {
+		faults = append(faults, FieldFault(subject, fault))
+	}
+
+	if len(faults) == 0 {
+		if successFault := s.onSuccess(ctx); successFault != nil {
+			faults = append(faults, successFault)
 		}
 	}
 
-	// if any post-field-eval actions are set, run them
-	if postFault := s.postValidation(ctx); postFault != nil {
-		faults = append(faults, postFault)
-	}
-
-	return s.toError(faults)
+	return s.err(faults)
 }
