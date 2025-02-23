@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "google/protobuf/field_mask.proto";
+package propl.v1;
+
+message Address {
+  string line1 = 1;
+  string line2 = 2;
+}
+
+message User {
+  string id = 1;
+  string first_name = 2;
+  string last_name = 4;
+  Address primary_address = 5;
+  repeated Address secondary_addresses = 6;
+}
+
+message CreateUserRequest {
+  User user = 1;
+}
+
+
+message UpdateUserRequest {
+  User user = 1;
+  google.protobuf.FieldMask update_mask = 2;
+}
