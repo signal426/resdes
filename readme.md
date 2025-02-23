@@ -19,8 +19,8 @@ doLogic := func(_ context.Context, _ *proplv1.UpdateUserRequest) error {
 	return nil
 }
 
-// create a set of policies for the current request
-p := ForSubject(req, req.GetUpdateMask().Paths...).
+// create a set of policies and actions for the current request
+s := soldr.ForSubject(req, req.GetUpdateMask().Paths...).
 	// an action that gets run before request validation and returns early if an err occurrs
 	WithValidationGateAction(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
 		return authorizeUpdate(msg.GetUser().GetId())
@@ -38,7 +38,7 @@ p := ForSubject(req, req.GetUpdateMask().Paths...).
 	})
 
 // act
-err := p.E(context.Background())
+err := s.E(context.Background())
 ```
 Any field on the message not specified in the request policy does not get evaluated.
 
