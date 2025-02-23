@@ -18,16 +18,16 @@ const (
 	RequestLevel
 )
 
-func FieldFault(field string, err error) Fault {
-	return Fault{
+func FieldFault(field string, err error) *Fault {
+	return &Fault{
 		Type:  FieldLevel,
 		Err:   err,
 		Field: field,
 	}
 }
 
-func RequestFault(err error) Fault {
-	return Fault{
+func RequestFault(err error) *Fault {
+	return &Fault{
 		Type: RequestLevel,
 		Err:  err,
 	}
@@ -39,7 +39,7 @@ type Fault struct {
 	Err   error
 }
 
-type ByType []Fault
+type ByType []*Fault
 
 func (u ByType) Len() int {
 	return len(u)
@@ -54,7 +54,7 @@ func (u ByType) Swap(i, j int) {
 }
 
 type FaultHandler interface {
-	ToError(faults []Fault) error
+	ToError(faults []*Fault) error
 }
 
 var _ FaultHandler = (*defaultFaultHandler)(nil)
@@ -82,7 +82,7 @@ func newDefaultFaultHandler(options ...defaultFaultHandlerOption) *defaultFaultH
 }
 
 // Process implements ErrResultHandler.
-func (*defaultFaultHandler) ToError(faults []Fault) error {
+func (*defaultFaultHandler) ToError(faults []*Fault) error {
 	if len(faults) == 0 {
 		return nil
 	}

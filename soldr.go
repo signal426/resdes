@@ -2,7 +2,6 @@ package soldr
 
 import (
 	"context"
-	"errors"
 	"reflect"
 
 	"google.golang.org/protobuf/proto"
@@ -24,10 +23,13 @@ const (
 type Subject[T proto.Message] struct {
 	// custom actions to run before fields are evaluated
 	// any error from a pre-field eval returns early
-	preFieldEvalActions []Action[T]
+	initAction Action[T]
 
 	// custom actions to run after fields are evaluated
-	postFieldEvalActions []Action[T]
+	successAction Action[T]
+
+	// custom action to run regardless if an error occurred
+	postAction Action[T]
 
 	// policy manager for executing policies
 	pm *policyManager[T]
@@ -49,12 +51,10 @@ type Subject[T proto.Message] struct {
 // builder methods.
 func ForSubject[T proto.Message](subject T, fieldMask ...string) *Subject[T] {
 	return &Subject[T]{
-		fieldProcessor:       newFieldProcessor(),
-		paths:                getPathsFromMask(fieldMask...),
-		pm:                   NewPolicyManager[T](),
-		preFieldEvalActions:  make([]Action[T], 0, 2),
-		postFieldEvalActions: make([]Action[T], 0, 2),
-		message:              subject,
+		fieldProcessor: newFieldProcessor(),
+		paths:          getPathsFromMask(fieldMask...),
+		pm:             NewPolicyManager[T](),
+		message:        subject,
 	}
 }
 
@@ -157,13 +157,18 @@ func (p *Subject[T]) AssertCustomWhenInMask(path string, action Action[T]) *Subj
 	return p
 }
 
-func (p *Subject[T]) WithValidationGateAction(act Action[T]) *Subject[T] {
-	p.preFieldEvalActions = append(p.preFieldEvalActions, act)
+func (p *Subject[T]) BeforeValidation(act Action[T]) *Subject[T] {
+	p.initAction = act
 	return p
 }
 
-func (p *Subject[T]) WithPostValidationAction(act Action[T]) *Subject[T] {
-	p.postFieldEvalActions = append(p.postFieldEvalActions, act)
+func (p *Subject[T]) OnSuccess(act Action[T]) *Subject[T] {
+	p.successAction = act
+	return p
+}
+
+func (p *Subject[T]) PostValidation(act Action[T]) *Subject[T] {
+	p.postAction = act
 	return p
 }
 
@@ -187,50 +192,44 @@ func (s *Subject[T]) E(ctx context.Context) error {
 	return s.Evaluate(ctx)
 }
 
-func (s *Subject[T]) evaluatePreFieldActions(ctx context.Context) *Fault {
+func (s *Subject[T]) init(ctx context.Context) *Fault {
 	// evaluate the global pre-checks
-	var err error
-	if len(s.preFieldEvalActions) > 0 {
-		for _, action := range s.preFieldEvalActions {
-			if aerr := action(ctx, s.message); aerr != nil {
-				if err != nil {
-					err = errors.Join(err, aerr)
-				} else {
-					err = aerr
-				}
-			}
+	if s.initAction != nil {
+		if err := s.initAction(ctx, s.message); err != nil {
+			return RequestFault(err)
 		}
 	}
-	var rf Fault
-	if err == nil {
-		return nil
-	} else {
-		rf = RequestFault(err)
-	}
-	return &rf
+
+	return nil
 }
 
-func (s *Subject[T]) evaluatePostFieldActions(ctx context.Context) *Fault {
+func (s *Subject[T]) onSuccess(ctx context.Context) *Fault {
 	// evaluate the global pre-checks
-	var err error
-	if len(s.postFieldEvalActions) > 0 {
-		for _, action := range s.postFieldEvalActions {
-			if aerr := action(ctx, s.message); aerr != nil {
-				if err != nil {
-					err = errors.Join(err, aerr)
-				} else {
-					err = aerr
-				}
-			}
+	if s.successAction != nil {
+		if err := s.successAction(ctx, s.message); err != nil {
+			return RequestFault(err)
 		}
 	}
-	var rf Fault
-	if err == nil {
-		return nil
-	} else {
-		rf = RequestFault(err)
+
+	return nil
+}
+
+func (s *Subject[T]) postValidation(ctx context.Context) *Fault {
+	// evaluate the global pre-checks
+	if s.postAction != nil {
+		if err := s.postAction(ctx, s.message); err != nil {
+			return RequestFault(err)
+		}
 	}
-	return &rf
+
+	return nil
+}
+
+func (s *Subject[T]) toError(faults []*Fault) error {
+	if s.fh == nil {
+		s.fh = newDefaultFaultHandler()
+	}
+	return s.fh.ToError(faults)
 }
 
 // Evaluate checks each declared policy and returns an error describing
@@ -239,26 +238,30 @@ func (s *Subject[T]) evaluatePostFieldActions(ctx context.Context) *Fault {
 //
 // To use your own infractionsHandler, specify a handler using WithInfractionsHandler.
 func (s *Subject[T]) Evaluate(ctx context.Context) error {
-	// if the fault handler is not set, set to default
-	if s.fh == nil {
-		s.fh = newDefaultFaultHandler()
-	}
+	faults := []*Fault{}
 
 	// if any pre-field-eval actions are set, run them
-	if err := s.evaluatePreFieldActions(ctx); err != nil {
-		return s.fh.ToError([]Fault{*err})
-	}
+	if err := s.init(ctx); err != nil {
+		faults = append(faults, err)
+	} else {
+		// execute the field policies
+		allFaults := s.pm.ExecuteAllPolicies(ctx, s.message)
+		for subject, fault := range allFaults {
+			faults = append(faults, FieldFault(subject, fault))
+		}
 
-	// assert field traits based on their condition in the message
-	faults := []Fault{}
-	allFaults := s.pm.ExecuteAllPolicies(ctx, s.message)
-	for subject, fault := range allFaults {
-		faults = append(faults, FieldFault(subject, fault))
+		// validation passes, run a success action if set
+		if len(faults) == 0 {
+			if successFault := s.onSuccess(ctx); successFault != nil {
+				faults = append(faults, successFault)
+			}
+		}
 	}
 
 	// if any post-field-eval actions are set, run them
-	if postFaults := s.evaluatePostFieldActions(ctx); postFaults != nil {
-		faults = append(faults, *postFaults)
+	if postFault := s.postValidation(ctx); postFault != nil {
+		faults = append(faults, postFault)
 	}
-	return s.fh.ToError(faults)
+
+	return s.toError(faults)
 }
