@@ -48,12 +48,30 @@ func TestFieldPolicies(t *testing.T) {
 		}
 
 		p := ForSubject(req).
-			AssertCustom("user.first_name", func(ctx context.Context, msg *proplv1.CreateUserRequest) error {
-				if msg.GetUser().GetFirstName() == "Bob" {
-					return errors.New("can't be bob")
+			CustomValidation(func(ctx context.Context, msg *proplv1.CreateUserRequest, faults FaultMap) error {
+				if msg.GetUser().GetFirstName() == "bob" {
+					faults.Add("user.first_name", errors.New("cannot be bob"))
 				}
 				return nil
 			})
+
+		// act
+		err := p.E(context.Background())
+
+		// assert
+		assert.Error(t, err)
+	})
+
+	t.Run("it should evaluate not eq", func(t *testing.T) {
+		// arrange
+		req := &proplv1.CreateUserRequest{
+			User: &proplv1.User{
+				FirstName: "Bob",
+			},
+		}
+
+		p := ForSubject(req).
+			AssertNotEqualTo("user.first_name", req.GetUser().GetFirstName(), "bob")
 
 		// act
 		err := p.E(context.Background())
@@ -79,10 +97,10 @@ func TestFieldPolicies(t *testing.T) {
 
 		p := ForSubject(req, req.GetUpdateMask().Paths...).
 			AssertNonZero("user.id", req.GetUser().GetId()).
-			AssertNonZero("some.fake", nil).
-			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
+			AssertNotEqualTo("user.id", req.GetUser().GetId(), "bob").
 			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
-			AssertNonZeroWhenInMask("user.primary_address.line1", req.GetUser().GetPrimaryAddress().GetLine1())
+			AssertNonZeroWhenInMask("user.primary_address.line1", req.GetUser().GetPrimaryAddress().GetLine1()).
+			AssertNotEqualToWhenInMask("user.primary_address.last_name", req.GetUser().GetPrimaryAddress().GetLine2(), "b")
 
 		// act
 		err := p.E(context.Background())
@@ -114,9 +132,9 @@ func TestFieldPolicies(t *testing.T) {
 			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
 			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
 			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
-			AssertCustomWhenInMask("user.primary_addres.line1", func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
+			CustomValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, fieldFaults FaultMap) error {
 				if req.GetUser().GetPrimaryAddress().GetLine1() == "a" {
-					return errors.New("cannot be a")
+					fieldFaults.Add("user.primary_address_line1", errors.New("cannot be a"))
 				}
 				return nil
 			})
@@ -132,9 +150,10 @@ func TestFieldPolicies(t *testing.T) {
 
 	t.Run("it should run a custom action before request field validation", func(t *testing.T) {
 		// arrange
-		authorizeUpdate := func(userId string) error {
-			if userId != "abc123" {
-				return errors.New("can only update user abc123")
+		authUpdate := func(ctx context.Context) error {
+			callerId := ctx.Value("callerId")
+			if callerId == nil || callerId == "" {
+				return errors.New("caller id is empty")
 			}
 			return nil
 		}
@@ -154,10 +173,9 @@ func TestFieldPolicies(t *testing.T) {
 
 		p := ForSubject(req, req.GetUpdateMask().Paths...).
 			BeforeValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
-				return authorizeUpdate(msg.GetUser().GetId())
+				return authUpdate(ctx)
 			}).
 			AssertNonZero("user.id", req.GetUser().GetId()).
-			AssertNonZero("some.fake", nil).
 			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
 			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
 			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress())
@@ -171,16 +189,10 @@ func TestFieldPolicies(t *testing.T) {
 
 	t.Run("it should run a custom action if validation successful", func(t *testing.T) {
 		// arrange
-		authorizeUpdate := func(_ context.Context, userId string) error {
-			if userId != "abc123" {
-				return errors.New("can only update user abc123")
-			}
-			return nil
-		}
-
-		doLogic := func(_ context.Context, msg *proplv1.UpdateUserRequest) error {
-			if msg.GetUser().GetLastName() == "" {
-				msg.GetUser().LastName = "NA"
+		authorizeUpdate := func(ctx context.Context) error {
+			userId := ctx.Value("userId")
+			if userId == nil {
+				return errors.New("cannot resolve request due to missing user id")
 			}
 			return nil
 		}
@@ -200,22 +212,29 @@ func TestFieldPolicies(t *testing.T) {
 		}
 
 		p := ForSubject(req, req.GetUpdateMask().Paths...).
-			BeforeValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
-				return authorizeUpdate(ctx, msg.GetUser().GetId())
-			}).
 			AssertNonZero("user.id", req.GetUser().GetId()).
 			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
-			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
-			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
+			CustomValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, fieldFaults FaultMap) error {
+				if msg.GetUser().GetPrimaryAddress() == nil {
+					fieldFaults.Add("user.primar_address", errors.New("should not be nil"))
+				}
+				return nil
+			}).
+			// runs immediately after field valiadtion
+			AfterValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, fieldValidationResult ValidationResult) error {
+				// can check the field validation results before using a value if need be or just run this function
+				return authorizeUpdate(ctx)
+			}).
+			// runs last if all was successful
 			OnSuccess(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
-				return doLogic(ctx, msg)
+				msg.User.LastName = "NA"
+				return nil
 			})
-
 		// act
 		err := p.E(context.Background())
 
 		// assert
 		assert.NoError(t, err)
-		assert.Equal(t, req.GetUser().GetLastName(), "NA")
+		assert.Equal(t, "NA", req.GetUser().GetLastName())
 	})
 }

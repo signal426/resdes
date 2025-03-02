@@ -1,5 +1,7 @@
 package soldr
 
+import "fmt"
+
 type TraitType uint32
 
 const (
@@ -10,16 +12,16 @@ const (
 	Custom
 )
 
-var _ SubjectTrait = (*trait)(nil)
-
 // trait is a feature of a subject
 type trait struct {
 	// the trait type
 	traitType TraitType
 	// the trait that this trait is composed with
-	andTrait *trait
+	andTrait SubjectTrait
 	// the trait that this trait is composed with
-	orTrait *trait
+	orTrait SubjectTrait
+	// the value that the subject cannot have
+	notEqualTo interface{}
 }
 
 func Traitless() *trait {
@@ -31,6 +33,29 @@ func Traitless() *trait {
 func NotZeroTrait() *trait {
 	return &trait{
 		traitType: NotZero,
+	}
+}
+
+func NotEqualTrait(ne interface{}) (*trait, error) {
+	if !validValue(ne) {
+		return nil, fmt.Errorf("cannot compare non-primitive types")
+	}
+	return &trait{
+		traitType:  NotEqual,
+		notEqualTo: ne,
+	}, nil
+}
+
+func validValue(value interface{}) bool {
+	switch value.(type) {
+	case bool, string,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64,
+		complex64, complex128:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -50,16 +75,30 @@ func (t *trait) and(and *trait) *trait {
 	return t
 }
 
-func (t *trait) And() SubjectTrait {
+func (t *trait) NotEqualTo() interface{} {
+	return t.notEqualTo
+}
+
+// And implements SubjectTrait.
+func (t *trait) And(st SubjectTrait) {
+	t.andTrait = st
+}
+
+func (t *trait) GetAnd() SubjectTrait {
 	return t.andTrait
+}
+
+// Or implements SubjectTrait.
+func (t *trait) Or(st SubjectTrait) {
+	t.orTrait = st
+}
+
+func (t *trait) GetOr() SubjectTrait {
+	return t.orTrait
 }
 
 func (t trait) Type() TraitType {
 	return t.traitType
-}
-
-func (t *trait) Or() SubjectTrait {
-	return t.orTrait
 }
 
 func (t *trait) Valid() bool {
