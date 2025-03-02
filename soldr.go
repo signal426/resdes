@@ -11,27 +11,29 @@ import (
 const (
 	ErrMsgFieldCannotBeZero    = "field value cannot be zero value for type"
 	ErrMsgFieldCannotHaveValue = "field cannot have value"
+	ErrMsgFieldMustHaveValue   = "field must have value"
 )
 
-type (
-	FieldFaultMap              map[string]string
-	PreAction[T proto.Message] func(ctx context.Context, msg T, validationResult *ValidationResult)
-	Action[T proto.Message]    func(ctx context.Context, msg T, validationResult *ValidationResult)
-)
+// Fault map for field label to validation failure details
+type FieldFaultMap map[string]string
+
+// Some action to run during request processing
+type Action[T proto.Message] func(ctx context.Context, msg T, validationResult *ValidationResult)
 
 func (f FieldFaultMap) Set(key string, details string) {
 	f[key] = details
 }
 
+// ValidationResult is the result of the pipeline execution
 type ValidationResult struct {
 	FieldFaults           FieldFaultMap `json:"field_faults"`
 	RequestFailureMessage string        `json:"message"`
 	RequestFailureDetails string        `json:"details"`
 }
 
-func NewValidationResult(fieldFaults FieldFaultMap) *ValidationResult {
+func NewValidationResult() *ValidationResult {
 	return &ValidationResult{
-		FieldFaults: fieldFaults,
+		FieldFaults: make(FieldFaultMap),
 	}
 }
 
@@ -47,6 +49,10 @@ func (v *ValidationResult) ContainsFaultForField(path string) bool {
 	return ok
 }
 
+func (v *ValidationResult) HasFieldFaults() bool {
+	return len(v.FieldFaults) > 0
+}
+
 func (v *ValidationResult) AddFieldFault(path string, msg string) {
 	v.FieldFaults[path] = msg
 }
@@ -56,10 +62,10 @@ func (v *ValidationResult) SetResponseErr(msg, details string) {
 	v.RequestFailureDetails = details
 }
 
-type Subject[T proto.Message] struct {
-	// custom actions to run before fields are evaluated
-	// any error from a pre-field eval returns early
-	initAction PreAction[T]
+// Line
+type Line[T proto.Message] struct {
+	// action to run before running field validations
+	initAction Action[T]
 
 	// custom actions to run after fields are evaluated
 	successAction Action[T]
@@ -70,7 +76,8 @@ type Subject[T proto.Message] struct {
 	// custom validation func
 	customValidations []Action[T]
 
-	fieldFaults FieldFaultMap
+	// result of executing this line of actions
+	result *ValidationResult
 
 	// paths is list of fields that are being evaluated if a field mask is supplied
 	paths map[string]struct{}
@@ -84,11 +91,11 @@ type Subject[T proto.Message] struct {
 
 // For creates a new policy aggregate for the specified message that can be built upon using the
 // builder methods.
-func ForSubject[T proto.Message](subject T, fieldMask ...string) *Subject[T] {
-	return &Subject[T]{
-		paths:             getPathsFromMask(fieldMask...),
-		message:           subject,
-		customValidations: []Action[T]{},
+func ForRequest[T proto.Message](subject T, fieldMask ...string) *Line[T] {
+	return &Line[T]{
+		paths:   getPathsFromMask(fieldMask...),
+		message: subject,
+		result:  NewValidationResult(),
 	}
 }
 
@@ -107,17 +114,17 @@ func getPathsFromMask(fieldMask ...string) map[string]struct{} {
 // zero value
 //
 // example: sue := HasNonZeroFields("user.id", "user.first_name")
-func (s *Subject[T]) AssertNonZero(path string, value interface{}) *Subject[T] {
+func (s *Line[T]) AssertNonZero(path string, value interface{}) *Line[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
 	if field.Zero() {
-		s.fieldFaults.Set(field.ID(), ErrMsgFieldCannotBeZero)
+		s.result.AddFieldFault(field.ID(), ErrMsgFieldCannotBeZero)
 	}
 
 	return s
 }
 
-func (s *Subject[T]) addConfigErr(err error) {
+func (s *Line[T]) addConfigErr(err error) {
 	if s.configFaults == nil {
 		s.configFaults = err
 	} else {
@@ -129,7 +136,7 @@ func (s *Subject[T]) addConfigErr(err error) {
 // zero value
 //
 // example: sue := HasNonZeroFields("user.id", "user.first_name")
-func (s *Subject[T]) AssertNotEqualTo(path string, value interface{}, notEqualTo interface{}) *Subject[T] {
+func (s *Line[T]) AssertNotEqualTo(path string, value interface{}, notEqualTo interface{}) *Line[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
 	eq, err := field.IsEqualTo(notEqualTo)
@@ -139,7 +146,23 @@ func (s *Subject[T]) AssertNotEqualTo(path string, value interface{}, notEqualTo
 	}
 
 	if eq {
-		s.fieldFaults.Set(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
+		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
+	}
+
+	return s
+}
+
+func (s *Line[T]) AssertEqualTo(path string, value interface{}, equalTo interface{}) *Line[T] {
+	// create a new field policy subject
+	field := NewField(path, value, s.isFieldInMask(path))
+	eq, err := field.IsEqualTo(equalTo)
+	if err != nil {
+		s.addConfigErr(err)
+		return s
+	}
+
+	if !eq {
+		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldMustHaveValue+": %v", equalTo))
 	}
 
 	return s
@@ -149,14 +172,14 @@ func (s *Subject[T]) AssertNotEqualTo(path string, value interface{}, notEqualTo
 // a field non-zero evaluation is triggered
 //
 // example: sue := HasNonZeroFieldsWhen(IfInMask("user.first_name"), Always("user.first_name"))
-func (s *Subject[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Subject[T] {
+func (s *Line[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Line[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
 	if !field.InMask() {
 		return s
 	}
 	if field.Zero() {
-		s.fieldFaults.Set(field.ID(), ErrMsgFieldCannotBeZero)
+		s.result.AddFieldFault(field.ID(), ErrMsgFieldCannotBeZero)
 	}
 
 	return s
@@ -166,7 +189,7 @@ func (s *Subject[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Su
 // a field non-zero evaluation is triggered
 //
 // example: sue := HasNonZeroFieldsWhen(IfInMask("user.first_name"), Always("user.first_name"))
-func (s *Subject[T]) AssertNotEqualToWhenInMask(path string, value interface{}, notEqualTo interface{}) *Subject[T] {
+func (s *Line[T]) AssertNotEqualToWhenInMask(path string, value interface{}, notEqualTo interface{}) *Line[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
 	if !field.InMask() {
@@ -179,33 +202,52 @@ func (s *Subject[T]) AssertNotEqualToWhenInMask(path string, value interface{}, 
 	}
 
 	if eq {
-		s.fieldFaults.Set(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
+		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
 	}
 
 	return s
 }
 
-func (s *Subject[T]) CustomValidation(act Action[T]) *Subject[T] {
+func (s *Line[T]) AssertEqualToWhenInMask(path string, value interface{}, equalTo interface{}) *Line[T] {
+	// create a new field policy subject
+	field := NewField(path, value, s.isFieldInMask(path))
+	if !field.InMask() {
+		return s
+	}
+	eq, err := field.IsEqualTo(equalTo)
+	if err != nil {
+		s.addConfigErr(err)
+		return s
+	}
+
+	if !eq {
+		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldMustHaveValue+": %v", equalTo))
+	}
+
+	return s
+}
+
+func (s *Line[T]) CustomValidation(act Action[T]) *Line[T] {
 	s.customValidations = append(s.customValidations, act)
 	return s
 }
 
-func (s *Subject[T]) BeforeValidation(act PreAction[T]) *Subject[T] {
+func (s *Line[T]) BeforeValidation(act Action[T]) *Line[T] {
 	s.initAction = act
 	return s
 }
 
-func (s *Subject[T]) AfterValidation(act Action[T]) *Subject[T] {
+func (s *Line[T]) AfterValidation(act Action[T]) *Line[T] {
 	s.postAction = act
 	return s
 }
 
-func (s *Subject[T]) OnSuccess(act Action[T]) *Subject[T] {
+func (s *Line[T]) OnSuccess(act Action[T]) *Line[T] {
 	s.successAction = act
 	return s
 }
 
-func (s *Subject[T]) isFieldInMask(path string) bool {
+func (s *Line[T]) isFieldInMask(path string) bool {
 	if s.paths == nil {
 		return false
 	}
@@ -214,7 +256,7 @@ func (s *Subject[T]) isFieldInMask(path string) bool {
 }
 
 // E shorthand for Evaluate
-func (s *Subject[T]) E(ctx context.Context) (*ValidationResult, error) {
+func (s *Line[T]) E(ctx context.Context) (*ValidationResult, error) {
 	return s.Evaluate(ctx)
 }
 
@@ -223,43 +265,42 @@ func (s *Subject[T]) E(ctx context.Context) (*ValidationResult, error) {
 // and field policies are not evaluated.
 //
 // To use your own infractionsHandler, specify a handler using WithInfractionsHandler.
-func (s *Subject[T]) Evaluate(ctx context.Context) (*ValidationResult, error) {
+func (s *Line[T]) Evaluate(ctx context.Context) (*ValidationResult, error) {
 	// return an err if there were any invalid configurations applied
 	if s.configFaults != nil {
 		return nil, s.configFaults
 	}
 
-	validationResult := NewValidationResult(s.fieldFaults)
 	if s.initAction != nil {
-		s.initAction(ctx, s.message, validationResult)
-		if !validationResult.Continue() {
-			return validationResult, nil
+		s.initAction(ctx, s.message, s.result)
+		if !s.result.Continue() {
+			return s.result, nil
 		}
 	}
 
 	if len(s.customValidations) > 0 {
 		for _, c := range s.customValidations {
-			c(ctx, s.message, validationResult)
-			if !validationResult.Continue() {
-				return validationResult, nil
+			c(ctx, s.message, s.result)
+			if !s.result.Continue() {
+				return s.result, nil
 			}
 		}
 	}
 
 	if s.postAction != nil {
-		s.postAction(ctx, s.message, validationResult)
-		if !validationResult.Continue() {
-			return validationResult, nil
+		s.postAction(ctx, s.message, s.result)
+		if !s.result.Continue() {
+			return s.result, nil
 		}
 	}
 
-	if len(s.fieldFaults) == 0 && validationResult.Continue() && s.successAction != nil {
-		s.successAction(ctx, s.message, validationResult)
+	if !s.result.HasFieldFaults() && s.result.Continue() && s.successAction != nil {
+		s.successAction(ctx, s.message, s.result)
 	}
 
-	if len(validationResult.FieldFaults) > 0 && validationResult.RequestFailureMessage == "" {
-		validationResult.SetResponseErr("request message contains invalid values", "")
+	if s.result.HasFieldFaults() && s.result.Continue() {
+		s.result.SetResponseErr("request message contains invalid values", "")
 	}
 
-	return validationResult, nil
+	return s.result, nil
 }

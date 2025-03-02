@@ -23,7 +23,7 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForSubject(req).
+		p := ForRequest(req).
 			AssertNonZero("user", req.GetUser()).
 			AssertNonZero("user.first_name", req.GetUser().GetFirstName())
 
@@ -49,7 +49,7 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForSubject(req).
+		p := ForRequest(req).
 			CustomValidation(func(ctx context.Context, msg *proplv1.CreateUserRequest, validationResult *ValidationResult) {
 				if msg.GetUser().GetFirstName() == "bob" {
 					validationResult.AddFieldFault("user.first_name", "cannot be bob")
@@ -78,7 +78,7 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForSubject(req).
+		p := ForRequest(req).
 			AssertNotEqualTo("user.first_name", req.GetUser().GetFirstName(), "bob")
 
 		// act
@@ -110,7 +110,7 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForSubject(req, req.GetUpdateMask().Paths...).
+		p := ForRequest(req, req.GetUpdateMask().Paths...).
 			AssertNonZero("user.id", req.GetUser().GetId()).
 			AssertNotEqualTo("user.id", req.GetUser().GetId(), "bob").
 			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
@@ -140,8 +140,17 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
+		expected := &ValidationResult{
+			FieldFaults: map[string]string{
+				"some.fake":                  ErrMsgFieldCannotBeZero,
+				"user.id":                    ErrMsgFieldCannotBeZero,
+				"user.last_name":             ErrMsgFieldCannotBeZero,
+				"user.primary_address_line1": ErrMsgFieldCannotHaveValue + ": a",
+			},
+		}
+
 		// ForSubject(request, options...) instantiates the evaluator
-		p := ForSubject(req).
+		p := ForRequest(req).
 			// Specify all of the field paths that should not be equal to their zero value
 			AssertNonZero("user.id", req.GetUser().GetId()).
 			AssertNonZero("some.fake", nil).
@@ -161,7 +170,7 @@ func TestFieldPolicies(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		assert.NotEmpty(t, res.FieldFaults)
+		assert.Equal(t, expected, res)
 	})
 
 	t.Run("it should run a custom action before request field validation", func(t *testing.T) {
@@ -187,7 +196,7 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForSubject(req, req.GetUpdateMask().Paths...).
+		p := ForRequest(req, req.GetUpdateMask().Paths...).
 			BeforeValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, validationResult *ValidationResult) {
 				if err := authUpdate(ctx); err != nil {
 					validationResult.SetResponseErr("request not authorized", err.Error())
@@ -229,7 +238,7 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForSubject(req, req.GetUpdateMask().Paths...).
+		p := ForRequest(req, req.GetUpdateMask().Paths...).
 			AssertNonZero("user.id", req.GetUser().GetId()).
 			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
 			CustomValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, validationResult *ValidationResult) {
