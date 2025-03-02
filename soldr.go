@@ -2,33 +2,41 @@ package soldr
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	prevalErr  = "the message failed prevalidation"
-	postValErr = "the message failed postvalidation"
+	ErrMsgFieldCannotBeZero    = "field value cannot be zero value for type"
+	ErrMsgFieldCannotHaveValue = "field cannot have value"
 )
 
-// output format of the errors
-type Format uint32
-
-const (
-	Default Format = iota
-	JSON
+type (
+	FieldFaultMap              map[string]string
+	PreAction[T proto.Message] func(ctx context.Context, msg T, validationResult *ValidationResult)
+	Action[T proto.Message]    func(ctx context.Context, msg T, validationResult *ValidationResult)
 )
 
-type ValidationResult struct {
-	FieldFaults           FaultMap
-	RequestFailureMessage string
-	RequestFailureDetails string
+func (f FieldFaultMap) Set(key string, details string) {
+	f[key] = details
 }
 
-func NewValidationResult(fieldFaults FaultMap) *ValidationResult {
+type ValidationResult struct {
+	FieldFaults           FieldFaultMap `json:"field_faults"`
+	RequestFailureMessage string        `json:"message"`
+	RequestFailureDetails string        `json:"details"`
+}
+
+func NewValidationResult(fieldFaults FieldFaultMap) *ValidationResult {
 	return &ValidationResult{
 		FieldFaults: fieldFaults,
 	}
+}
+
+func (v ValidationResult) Continue() bool {
+	return v.RequestFailureMessage == ""
 }
 
 func (v *ValidationResult) ContainsFaultForField(path string) bool {
@@ -48,10 +56,6 @@ func (v *ValidationResult) SetResponseErr(msg, details string) {
 	v.RequestFailureDetails = details
 }
 
-type PreAction[T proto.Message] func(ctx context.Context, msg T) (error, bool)
-
-type Action[T proto.Message] func(ctx context.Context, msg T, validationResult ValidationResult) error
-
 type Subject[T proto.Message] struct {
 	// custom actions to run before fields are evaluated
 	// any error from a pre-field eval returns early
@@ -63,14 +67,10 @@ type Subject[T proto.Message] struct {
 	// custom action to run regardless if an error occurred
 	postAction Action[T]
 
-	// policy manager for executing policies
-	pm *policyManager[T]
-
 	// custom validation func
 	customValidations []Action[T]
 
-	// the handler for the faults
-	fh FaultHandler
+	fieldFaults FieldFaultMap
 
 	// paths is list of fields that are being evaluated if a field mask is supplied
 	paths map[string]struct{}
@@ -79,7 +79,7 @@ type Subject[T proto.Message] struct {
 	message T
 
 	// errors from the validation builder to be surfaced on evaluation
-	configFaults []*Fault
+	configFaults error
 }
 
 // For creates a new policy aggregate for the specified message that can be built upon using the
@@ -87,17 +87,9 @@ type Subject[T proto.Message] struct {
 func ForSubject[T proto.Message](subject T, fieldMask ...string) *Subject[T] {
 	return &Subject[T]{
 		paths:             getPathsFromMask(fieldMask...),
-		pm:                NewPolicyManager[T](),
 		message:           subject,
 		customValidations: []Action[T]{},
 	}
-}
-
-func (s *Subject[T]) addConfigFault(err error) {
-	if s.configFaults == nil {
-		s.configFaults = []*Fault{}
-	}
-	s.configFaults = append(s.configFaults, ConfigFault(err))
 }
 
 func getPathsFromMask(fieldMask ...string) map[string]struct{} {
@@ -115,53 +107,41 @@ func getPathsFromMask(fieldMask ...string) map[string]struct{} {
 // zero value
 //
 // example: sue := HasNonZeroFields("user.id", "user.first_name")
-func (s *Subject[T]) AssertNonZero(sath string, value interface{}) *Subject[T] {
+func (s *Subject[T]) AssertNonZero(path string, value interface{}) *Subject[T] {
 	// create a new field policy subject
-	field := NewField(sath, value, s.isFieldInMask(sath))
+	field := NewField(path, value, s.isFieldInMask(path))
+	if field.Zero() {
+		s.fieldFaults.Set(field.ID(), ErrMsgFieldCannotBeZero)
+	}
 
-	// create the trait policy for the field
-	traitPolicy := NewPolicy(NotZeroTrait(), field.MustBeSet, field)
-
-	// add the policy to our manager
-	s.pm.AddTraitPolicy(traitPolicy)
 	return s
+}
+
+func (s *Subject[T]) addConfigErr(err error) {
+	if s.configFaults == nil {
+		s.configFaults = err
+	} else {
+		errors.Join(s.configFaults, err)
+	}
 }
 
 // HasNonZeroField pass in a list of fields that must not be equal to their
 // zero value
 //
 // example: sue := HasNonZeroFields("user.id", "user.first_name")
-func (s *Subject[T]) AssertNotEqualTo(sath string, value interface{}, notEqualTo interface{}) *Subject[T] {
+func (s *Subject[T]) AssertNotEqualTo(path string, value interface{}, notEqualTo interface{}) *Subject[T] {
 	// create a new field policy subject
-	field := NewField(sath, value, s.isFieldInMask(sath))
-
-	var (
-		trait SubjectTrait
-		err   error
-	)
-
-	// if the comparison value is zero, just use a non-zero trait policy
-	if isZero(notEqualTo) {
-		trait = NotZeroTrait()
-	} else {
-		// create the trait
-		if !field.isComparable(notEqualTo) {
-			s.addConfigFault(ErrComparisonTypeMismatch)
-			return s
-		}
-
-		trait, err = NotEqualTrait(notEqualTo)
-		if err != nil {
-			s.addConfigFault(err)
-			return s
-		}
+	field := NewField(path, value, s.isFieldInMask(path))
+	eq, err := field.IsEqualTo(notEqualTo)
+	if err != nil {
+		s.addConfigErr(err)
+		return s
 	}
 
-	// create the policy with the trait
-	traitPolicy := NewPolicy(trait, field.MustBeSet, field)
+	if eq {
+		s.fieldFaults.Set(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
+	}
 
-	// add the policy to our manager
-	s.pm.AddTraitPolicy(traitPolicy)
 	return s
 }
 
@@ -172,12 +152,13 @@ func (s *Subject[T]) AssertNotEqualTo(sath string, value interface{}, notEqualTo
 func (s *Subject[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Subject[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
+	if !field.InMask() {
+		return s
+	}
+	if field.Zero() {
+		s.fieldFaults.Set(field.ID(), ErrMsgFieldCannotBeZero)
+	}
 
-	// create the trait policy for the field
-	traitPolicy := NewPolicy(NotZeroTrait(), field.MustBeSetIfInMask, field)
-
-	// add the policy to our manager
-	s.pm.AddTraitPolicy(traitPolicy)
 	return s
 }
 
@@ -188,29 +169,19 @@ func (s *Subject[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Su
 func (s *Subject[T]) AssertNotEqualToWhenInMask(path string, value interface{}, notEqualTo interface{}) *Subject[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
-
-	var (
-		trait SubjectTrait
-		err   error
-	)
-
-	// if the comparison value is zero, just use a non-zero trait policy
-	if isZero(notEqualTo) {
-		trait = NotZeroTrait()
-	} else {
-		// create the trait
-		trait, err = NotEqualTrait(ErrComparisonTypeMismatch)
-		if err != nil {
-			s.addConfigFault(err)
-			return s
-		}
+	if !field.InMask() {
+		return s
+	}
+	eq, err := field.IsEqualTo(notEqualTo)
+	if err != nil {
+		s.addConfigErr(err)
+		return s
 	}
 
-	// create the trait policy for the field
-	traitPolicy := NewPolicy(trait, field.MustBeSetIfInMask, field)
+	if eq {
+		s.fieldFaults.Set(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
+	}
 
-	// add the policy to our manager
-	s.pm.AddTraitPolicy(traitPolicy)
 	return s
 }
 
@@ -234,13 +205,6 @@ func (s *Subject[T]) OnSuccess(act Action[T]) *Subject[T] {
 	return s
 }
 
-// CustomErrResultHandler call this before calling E() or Evaluate() if you want to override
-// the errors that are output from the policy execution
-func (s *Subject[T]) CustomFaultHandler(e FaultHandler) *Subject[T] {
-	s.fh = e
-	return s
-}
-
 func (s *Subject[T]) isFieldInMask(path string) bool {
 	if s.paths == nil {
 		return false
@@ -250,63 +214,8 @@ func (s *Subject[T]) isFieldInMask(path string) bool {
 }
 
 // E shorthand for Evaluate
-func (s *Subject[T]) E(ctx context.Context) error {
+func (s *Subject[T]) E(ctx context.Context) (*ValidationResult, error) {
 	return s.Evaluate(ctx)
-}
-
-func (s *Subject[T]) beforeValidation(ctx context.Context) (*Fault, bool) {
-	// evaluate the global pre-checks
-	if s.initAction != nil {
-		if err, cont := s.initAction(ctx, s.message); err != nil {
-			return RequestFault(err), cont
-		}
-	}
-
-	return nil, true
-}
-
-func (s *Subject[T]) afterValidation(ctx context.Context, validationResult ValidationResult) *Fault {
-	// evaluate the global pre-checks
-	if s.postAction != nil {
-		if err := s.postAction(ctx, s.message, validationResult); err != nil {
-			return RequestFault(err)
-		}
-	}
-
-	return nil
-}
-
-func (s *Subject[T]) onSuccess(ctx context.Context, validationResult ValidationResult) *Fault {
-	// evaluate the global pre-checks
-	if s.successAction != nil {
-		if err := s.successAction(ctx, s.message, validationResult); err != nil {
-			return RequestFault(err)
-		}
-	}
-
-	return nil
-}
-
-func (s *Subject[T]) runCustomValidations(ctx context.Context, validationResult ValidationResult) []*Fault {
-	faults := []*Fault{}
-	if len(s.customValidations) > 0 {
-		for _, c := range s.customValidations {
-			if err := c(ctx, s.message, validationResult); err != nil {
-				faults = append(faults, CustomFault(err))
-			}
-		}
-	}
-	return faults
-}
-
-func (s *Subject[T]) err(f []*Fault) error {
-	if s.fh == nil {
-		s.fh = newDefaultFaultHandler()
-	}
-	if len(f) == 0 {
-		return nil
-	}
-	return s.fh.ToError(f)
 }
 
 // Evaluate checks each declared policy and returns an error describing
@@ -314,41 +223,43 @@ func (s *Subject[T]) err(f []*Fault) error {
 // and field policies are not evaluated.
 //
 // To use your own infractionsHandler, specify a handler using WithInfractionsHandler.
-func (s *Subject[T]) Evaluate(ctx context.Context) error {
+func (s *Subject[T]) Evaluate(ctx context.Context) (*ValidationResult, error) {
 	// return an err if there were any invalid configurations applied
-	if len(s.configFaults) > 0 {
-		return s.err(s.configFaults)
+	if s.configFaults != nil {
+		return nil, s.configFaults
 	}
 
-	// init action if supplied
-	fault, cont := s.beforeValidation(ctx)
-	if fault != nil && !cont {
-		return s.err([]*Fault{fault})
-	}
-
-	// assert field traits based on their condition in the message
-	faults := []*Fault{}
-	policyFaults := s.pm.Apply()
-	if customFaults := s.runCustomValidations(ctx, policyFaults); len(customFaults) > 0 {
-		faults = append(faults, customFaults...)
-	}
-
-	// get all the field faults
-	for subject, fault := range policyFaults {
-		faults = append(faults, FieldFault(subject, fault))
-	}
-
-	// if there's a post-validation action, run that
-	if err := s.afterValidation(ctx, policyFaults); err != nil {
-		faults = append(faults, err)
-	}
-
-	// if no faults, run the success action
-	if len(faults) == 0 {
-		if successFault := s.onSuccess(ctx); successFault != nil {
-			faults = append(faults, successFault)
+	validationResult := NewValidationResult(s.fieldFaults)
+	if s.initAction != nil {
+		s.initAction(ctx, s.message, validationResult)
+		if !validationResult.Continue() {
+			return validationResult, nil
 		}
 	}
 
-	return s.err(faults)
+	if len(s.customValidations) > 0 {
+		for _, c := range s.customValidations {
+			c(ctx, s.message, validationResult)
+			if !validationResult.Continue() {
+				return validationResult, nil
+			}
+		}
+	}
+
+	if s.postAction != nil {
+		s.postAction(ctx, s.message, validationResult)
+		if !validationResult.Continue() {
+			return validationResult, nil
+		}
+	}
+
+	if len(s.fieldFaults) == 0 && validationResult.Continue() && s.successAction != nil {
+		s.successAction(ctx, s.message, validationResult)
+	}
+
+	if len(validationResult.FieldFaults) > 0 && validationResult.RequestFailureMessage == "" {
+		validationResult.SetResponseErr("request message contains invalid values", "")
+	}
+
+	return validationResult, nil
 }

@@ -1,36 +1,21 @@
 package soldr
 
 import (
-	"errors"
+	"fmt"
 	"reflect"
 )
 
-var (
-	_                       PolicySubject = (*Field)(nil)
-	ErrFieldNotSetInMessage error         = errors.New("expected field to be set in message but was not present")
-	ErrFieldNotSetInMask    error         = errors.New("field not set in mask")
-)
+var ErrMsgFieldNotComparable string = "expected type %s but got %s"
 
 func isZero(i interface{}) bool {
 	return i == nil || reflect.ValueOf(i).IsZero()
 }
 
-func (f Field) MustBeSet() (string, bool) {
-	if f.Zero() {
-		return ErrFieldNotSetInMessage, false
+func (f Field) IsEqualTo(compareTo interface{}) (bool, error) {
+	if !f.isComparable(compareTo) {
+		return false, fmt.Errorf(ErrMsgFieldNotComparable, reflect.TypeOf(f.Value), reflect.TypeOf(compareTo))
 	}
-	return nil, true
-}
-
-func (f Field) MustBeSetIfInMask() (string, bool) {
-	if !f.inMask {
-		return nil, true
-	}
-
-	if f.Zero() && f.inMask {
-		return ErrFieldNotSetInMessage, false
-	}
-	return nil, true
+	return true, nil
 }
 
 type Field struct {
@@ -56,19 +41,10 @@ func (f Field) Zero() bool {
 	return isZero(f.Value)
 }
 
-// CheckHasTraits implements PolicySubject.
-func (f Field) HasTrait(t SubjectTrait) bool {
-	switch t.Type() {
-	case NotZero:
-		return !f.Zero()
-	case NotEqual:
-		return f.Value != t.NotEqualTo()
-	default:
-		return true
-	}
-}
-
-// ID implements PolicySubject.
 func (f Field) ID() string {
 	return f.Path
+}
+
+func (f Field) InMask() bool {
+	return f.inMask
 }
