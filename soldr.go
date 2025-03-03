@@ -37,6 +37,8 @@ func NewValidationResult() *ValidationResult {
 	}
 }
 
+func (v ValidationResult) ToErr(func() error) error
+
 func (v ValidationResult) Continue() bool {
 	return v.RequestFailureMessage == ""
 }
@@ -47,6 +49,10 @@ func (v *ValidationResult) ContainsFaultForField(path string) bool {
 	}
 	_, ok := v.FieldFaults[path]
 	return ok
+}
+
+func (v *ValidationResult) Failed() bool {
+	return v != nil && !v.Continue() || v.HasFieldFaults()
 }
 
 func (v *ValidationResult) HasFieldFaults() bool {
@@ -89,8 +95,6 @@ type Line[T proto.Message] struct {
 	configFaults error
 }
 
-// For creates a new policy aggregate for the specified message that can be built upon using the
-// builder methods.
 func ForRequest[T proto.Message](subject T, fieldMask ...string) *Line[T] {
 	return &Line[T]{
 		paths:   getPathsFromMask(fieldMask...),
@@ -110,10 +114,6 @@ func getPathsFromMask(fieldMask ...string) map[string]struct{} {
 	return paths
 }
 
-// HasNonZeroField pass in a list of fields that must not be equal to their
-// zero value
-//
-// example: sue := HasNonZeroFields("user.id", "user.first_name")
 func (s *Line[T]) AssertNonZero(path string, value interface{}) *Line[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
@@ -132,10 +132,6 @@ func (s *Line[T]) addConfigErr(err error) {
 	}
 }
 
-// HasNonZeroField pass in a list of fields that must not be equal to their
-// zero value
-//
-// example: sue := HasNonZeroFields("user.id", "user.first_name")
 func (s *Line[T]) AssertNotEqualTo(path string, value interface{}, notEqualTo interface{}) *Line[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
@@ -168,10 +164,6 @@ func (s *Line[T]) AssertEqualTo(path string, value interface{}, equalTo interfac
 	return s
 }
 
-// HasNonZeroFieldsWhen pass in a list of field conditions if you want to customize the conditions under which
-// a field non-zero evaluation is triggered
-//
-// example: sue := HasNonZeroFieldsWhen(IfInMask("user.first_name"), Always("user.first_name"))
 func (s *Line[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Line[T] {
 	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
@@ -185,12 +177,7 @@ func (s *Line[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Line[
 	return s
 }
 
-// HasNonZeroFieldsWhen pass in a list of field conditions if you want to customize the conditions under which
-// a field non-zero evaluation is triggered
-//
-// example: sue := HasNonZeroFieldsWhen(IfInMask("user.first_name"), Always("user.first_name"))
 func (s *Line[T]) AssertNotEqualToWhenInMask(path string, value interface{}, notEqualTo interface{}) *Line[T] {
-	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
 	if !field.InMask() {
 		return s
@@ -209,7 +196,6 @@ func (s *Line[T]) AssertNotEqualToWhenInMask(path string, value interface{}, not
 }
 
 func (s *Line[T]) AssertEqualToWhenInMask(path string, value interface{}, equalTo interface{}) *Line[T] {
-	// create a new field policy subject
 	field := NewField(path, value, s.isFieldInMask(path))
 	if !field.InMask() {
 		return s
@@ -260,13 +246,7 @@ func (s *Line[T]) E(ctx context.Context) (*ValidationResult, error) {
 	return s.Evaluate(ctx)
 }
 
-// Evaluate checks each declared policy and returns an error describing
-// each infraction. If a precheck is specified and returns an error, this exits
-// and field policies are not evaluated.
-//
-// To use your own infractionsHandler, specify a handler using WithInfractionsHandler.
 func (s *Line[T]) Evaluate(ctx context.Context) (*ValidationResult, error) {
-	// return an err if there were any invalid configurations applied
 	if s.configFaults != nil {
 		return nil, s.configFaults
 	}

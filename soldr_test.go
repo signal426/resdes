@@ -33,6 +33,7 @@ func TestFieldPolicies(t *testing.T) {
 		// assert
 		assert.NoError(t, err)
 		assert.Equal(t, expected, res)
+		assert.True(t, res.Failed())
 	})
 
 	t.Run("it should evaluate a custom function", func(t *testing.T) {
@@ -62,6 +63,7 @@ func TestFieldPolicies(t *testing.T) {
 		// assert
 		assert.NoError(t, err)
 		assert.Equal(t, expected, res)
+		assert.True(t, res.Failed())
 	})
 
 	t.Run("it should evaluate not eq", func(t *testing.T) {
