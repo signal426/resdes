@@ -37,8 +37,6 @@ func NewValidationResult() *ValidationResult {
 	}
 }
 
-func (v ValidationResult) ToErr(func() error) error
-
 func (v ValidationResult) Continue() bool {
 	return v.RequestFailureMessage == ""
 }
