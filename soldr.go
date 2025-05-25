@@ -8,77 +8,76 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	ErrMsgFieldCannotBeZero    = "field value cannot be zero value for type"
-	ErrMsgFieldCannotHaveValue = "field cannot have value"
-	ErrMsgFieldMustHaveValue   = "field must have value"
-)
-
 // Fault map for field label to validation failure details
-type FieldFaultMap map[string]string
+type FieldFault struct {
+	Path string
+	Err  error
+}
 
 // Some action to run during request processing
-type Action[T proto.Message] func(ctx context.Context, msg T, validationResult *ValidationResult)
+type Validator[T proto.Message] func(context.Context, T, *ValidationResult) error
 
-func (f FieldFaultMap) Set(key string, details string) {
-	f[key] = details
-}
+// Handler to run if no validation faults. Returns some response object
+type Handler[T proto.Message, U any] func(context.Context, T) (U, error)
+
+// InitAction to run before field validation. An error returned from this acrtio
+type Auther[T proto.Message] func(context.Context, T) error
 
 // ValidationResult is the result of the pipeline execution
 type ValidationResult struct {
-	FieldFaults           FieldFaultMap `json:"field_faults"`
-	RequestFailureMessage string        `json:"message"`
-	RequestFailureDetails string        `json:"details"`
+	fieldFaults []*FieldFault
+	resultIdx   map[string]int
 }
 
 func NewValidationResult() *ValidationResult {
 	return &ValidationResult{
-		FieldFaults: make(FieldFaultMap),
+		fieldFaults: []*FieldFault{},
+		resultIdx:   make(map[string]int),
 	}
 }
 
-func (v ValidationResult) Continue() bool {
-	return v.RequestFailureMessage == ""
-}
-
-func (v *ValidationResult) ContainsFaultForField(path string) bool {
-	if v == nil || v.FieldFaults == nil || len(v.FieldFaults) == 0 {
-		return false
+func (v *ValidationResult) ToErr() error {
+	if len(v.fieldFaults) == 0 {
+		return nil
 	}
-	_, ok := v.FieldFaults[path]
-	return ok
+	var err error
+	for _, fault := range v.fieldFaults {
+		err = errors.Join(err, fmt.Errorf("%s: %w", fault.Path, fault.Err))
+	}
+	return err
 }
 
 func (v *ValidationResult) Failed() bool {
-	return v != nil && !v.Continue() || v.HasFieldFaults()
+	return v != nil && len(v.fieldFaults) > 0
 }
 
-func (v *ValidationResult) HasFieldFaults() bool {
-	return len(v.FieldFaults) > 0
+func (v *ValidationResult) AppendFieldFault(path string, err error) {
+	v.addErr(path, err)
 }
 
-func (v *ValidationResult) AddFieldFault(path string, msg string) {
-	v.FieldFaults[path] = msg
+func (v *ValidationResult) AppendFieldFaultErrStr(path string, details string) {
+	v.addErr(path, errors.New(details))
 }
 
-func (v *ValidationResult) SetResponseErr(msg, details string) {
-	v.RequestFailureMessage = msg
-	v.RequestFailureDetails = details
+func (v *ValidationResult) addErr(path string, err error) {
+	idx, ok := v.resultIdx[path]
+	if ok {
+		v.fieldFaults[idx].Err = errors.Join(v.fieldFaults[idx].Err, err)
+	} else {
+		v.fieldFaults = append(v.fieldFaults, &FieldFault{Path: path, Err: err})
+		v.resultIdx[path] = len(v.fieldFaults) - 1
+	}
 }
 
-// Line
-type Line[T proto.Message] struct {
-	// action to run before running field validations
-	initAction Action[T]
+type MessageValidator[T proto.Message] interface {
+	Exec(context.Context, T) error
+}
 
-	// custom actions to run after fields are evaluated
-	successAction Action[T]
+var _ MessageValidator[proto.Message] = (*DefaultMessageValidator[proto.Message])(nil)
 
-	// custom action to run regardless if an error occurred
-	postAction Action[T]
-
+type DefaultMessageValidator[T proto.Message] struct {
 	// custom validation func
-	customValidations []Action[T]
+	customValidation Validator[T]
 
 	// result of executing this line of actions
 	result *ValidationResult
@@ -86,19 +85,81 @@ type Line[T proto.Message] struct {
 	// paths is list of fields that are being evaluated if a field mask is supplied
 	paths map[string]struct{}
 
-	// the message we are processing
-	message T
-
-	// errors from the validation builder to be surfaced on evaluation
-	configFaults error
+	// fields to validate
+	fields []*Field
 }
 
-func ForRequest[T proto.Message](subject T, fieldMask ...string) *Line[T] {
-	return &Line[T]{
-		paths:   getPathsFromMask(fieldMask...),
-		message: subject,
-		result:  NewValidationResult(),
+func ForMessage[T proto.Message](fieldMask ...string) *DefaultMessageValidator[T] {
+	return &DefaultMessageValidator[T]{
+		paths:  getPathsFromMask(fieldMask...),
+		result: NewValidationResult(),
+		fields: []*Field{},
 	}
+}
+
+func (s *DefaultMessageValidator[T]) AssertNonZero(path string, value any) *DefaultMessageValidator[T] {
+	s.fields = append(s.fields, NewField(path, value, s.isFieldInMask(path), NonZero, Always, nil))
+	return s
+}
+
+func (s *DefaultMessageValidator[T]) AssertNotEqualTo(path string, value any, notEqualTo any) *DefaultMessageValidator[T] {
+	s.fields = append(s.fields, NewField(path, value, s.isFieldInMask(path), NotEqualTo, Always, notEqualTo))
+	return s
+}
+
+func (s *DefaultMessageValidator[T]) AssertEqualTo(path string, value any, equalTo any) *DefaultMessageValidator[T] {
+	s.fields = append(s.fields, NewField(path, value, s.isFieldInMask(path), MustEqual, Always, equalTo))
+	return s
+}
+
+func (s *DefaultMessageValidator[T]) AssertNonZeroWhenInMask(path string, value any) *DefaultMessageValidator[T] {
+	s.fields = append(s.fields, NewField(path, value, s.isFieldInMask(path), NonZero, InMask, nil))
+	return s
+}
+
+func (s *DefaultMessageValidator[T]) AssertNotEqualToWhenInMask(path string, value any, notEqualTo any) *DefaultMessageValidator[T] {
+	s.fields = append(s.fields, NewField(path, value, s.isFieldInMask(path), NotEqualTo, InMask, notEqualTo))
+	return s
+}
+
+func (s *DefaultMessageValidator[T]) AssertEqualToWhenInMask(path string, value any, equalTo any) *DefaultMessageValidator[T] {
+	s.fields = append(s.fields, NewField(path, value, s.isFieldInMask(path), MustEqual, InMask, equalTo))
+	return s
+}
+
+func (s *DefaultMessageValidator[T]) CustomValidation(act Validator[T]) *DefaultMessageValidator[T] {
+	s.customValidation = act
+	return s
+}
+
+func (s *DefaultMessageValidator[T]) Exec(ctx context.Context, message T) error {
+	if len(s.fields) > 0 {
+		for _, field := range s.fields {
+			if err := field.Validate(); err != nil {
+				s.result.AppendFieldFault(field.ID(), err)
+			}
+		}
+	}
+
+	if s.customValidation != nil {
+		if err := s.customValidation(ctx, message, s.result); err != nil {
+			return fmt.Errorf("an error occurred during custom message validation: %w", err)
+		}
+	}
+
+	if s.result.Failed() {
+		return s.result.ToErr()
+	}
+
+	return nil
+}
+
+func (s *DefaultMessageValidator[T]) isFieldInMask(path string) bool {
+	if s.paths == nil {
+		return false
+	}
+	_, inMask := s.paths[path]
+	return inMask
 }
 
 func getPathsFromMask(fieldMask ...string) map[string]struct{} {
@@ -112,173 +173,59 @@ func getPathsFromMask(fieldMask ...string) map[string]struct{} {
 	return paths
 }
 
-func (s *Line[T]) AssertNonZero(path string, value interface{}) *Line[T] {
-	// create a new field policy subject
-	field := NewField(path, value, s.isFieldInMask(path))
-	if field.Zero() {
-		s.result.AddFieldFault(field.ID(), ErrMsgFieldCannotBeZero)
-	}
+// Arrangement represents different actions to take during the
+// execution of serving some request
+type Arrangement[T proto.Message, U any] struct {
+	// action to run before running field validations
+	Auth Auther[T]
 
-	return s
+	// field processor
+	Validate MessageValidator[T]
+
+	// logic to run if all validations completed successfully --
+	// typically some business logic
+	Handle Handler[T, U]
 }
 
-func (s *Line[T]) addConfigErr(err error) {
-	if s.configFaults == nil {
-		s.configFaults = err
-	} else {
-		errors.Join(s.configFaults, err)
-	}
+func Arrange[T proto.Message, U any]() *Arrangement[T, U] {
+	return &Arrangement[T, U]{}
 }
 
-func (s *Line[T]) AssertNotEqualTo(path string, value interface{}, notEqualTo interface{}) *Line[T] {
-	// create a new field policy subject
-	field := NewField(path, value, s.isFieldInMask(path))
-	eq, err := field.IsEqualTo(notEqualTo)
-	if err != nil {
-		s.addConfigErr(err)
-		return s
-	}
-
-	if eq {
-		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
-	}
-
-	return s
+func (r *Arrangement[T, U]) WithAuth(act Auther[T]) *Arrangement[T, U] {
+	r.Auth = act
+	return r
 }
 
-func (s *Line[T]) AssertEqualTo(path string, value interface{}, equalTo interface{}) *Line[T] {
-	// create a new field policy subject
-	field := NewField(path, value, s.isFieldInMask(path))
-	eq, err := field.IsEqualTo(equalTo)
-	if err != nil {
-		s.addConfigErr(err)
-		return s
-	}
-
-	if !eq {
-		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldMustHaveValue+": %v", equalTo))
-	}
-
-	return s
+func (r *Arrangement[T, U]) WithValidate(fv MessageValidator[T]) *Arrangement[T, U] {
+	r.Validate = fv
+	return r
 }
 
-func (s *Line[T]) AssertNonZeroWhenInMask(path string, value interface{}) *Line[T] {
-	// create a new field policy subject
-	field := NewField(path, value, s.isFieldInMask(path))
-	if !field.InMask() {
-		return s
-	}
-	if field.Zero() {
-		s.result.AddFieldFault(field.ID(), ErrMsgFieldCannotBeZero)
-	}
-
-	return s
+func (r *Arrangement[T, U]) WithHandle(act Handler[T, U]) *Arrangement[T, U] {
+	r.Handle = act
+	return r
 }
 
-func (s *Line[T]) AssertNotEqualToWhenInMask(path string, value interface{}, notEqualTo interface{}) *Line[T] {
-	field := NewField(path, value, s.isFieldInMask(path))
-	if !field.InMask() {
-		return s
-	}
-	eq, err := field.IsEqualTo(notEqualTo)
-	if err != nil {
-		s.addConfigErr(err)
-		return s
-	}
-
-	if eq {
-		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldCannotHaveValue+": %v", notEqualTo))
-	}
-
-	return s
-}
-
-func (s *Line[T]) AssertEqualToWhenInMask(path string, value interface{}, equalTo interface{}) *Line[T] {
-	field := NewField(path, value, s.isFieldInMask(path))
-	if !field.InMask() {
-		return s
-	}
-	eq, err := field.IsEqualTo(equalTo)
-	if err != nil {
-		s.addConfigErr(err)
-		return s
-	}
-
-	if !eq {
-		s.result.AddFieldFault(field.ID(), fmt.Sprintf(ErrMsgFieldMustHaveValue+": %v", equalTo))
-	}
-
-	return s
-}
-
-func (s *Line[T]) CustomValidation(act Action[T]) *Line[T] {
-	s.customValidations = append(s.customValidations, act)
-	return s
-}
-
-func (s *Line[T]) BeforeValidation(act Action[T]) *Line[T] {
-	s.initAction = act
-	return s
-}
-
-func (s *Line[T]) AfterValidation(act Action[T]) *Line[T] {
-	s.postAction = act
-	return s
-}
-
-func (s *Line[T]) OnSuccess(act Action[T]) *Line[T] {
-	s.successAction = act
-	return s
-}
-
-func (s *Line[T]) isFieldInMask(path string) bool {
-	if s.paths == nil {
-		return false
-	}
-	_, inMask := s.paths[path]
-	return inMask
-}
-
-// E shorthand for Evaluate
-func (s *Line[T]) E(ctx context.Context) (*ValidationResult, error) {
-	return s.Evaluate(ctx)
-}
-
-func (s *Line[T]) Evaluate(ctx context.Context) (*ValidationResult, error) {
-	if s.configFaults != nil {
-		return nil, s.configFaults
-	}
-
-	if s.initAction != nil {
-		s.initAction(ctx, s.message, s.result)
-		if !s.result.Continue() {
-			return s.result, nil
+func (s *Arrangement[T, U]) Exec(ctx context.Context, message T) (U, error) {
+	// process the init action, if err, return
+	var res U
+	if s.Auth != nil {
+		if err := s.Auth(ctx, message); err != nil {
+			return res, err
 		}
 	}
 
-	if len(s.customValidations) > 0 {
-		for _, c := range s.customValidations {
-			c(ctx, s.message, s.result)
-			if !s.result.Continue() {
-				return s.result, nil
-			}
+	// validate fields if we have basic field validations
+	if s.Validate != nil {
+		if err := s.Validate.Exec(ctx, message); err != nil {
+			return res, err
 		}
 	}
 
-	if s.postAction != nil {
-		s.postAction(ctx, s.message, s.result)
-		if !s.result.Continue() {
-			return s.result, nil
-		}
+	// if no field faults, run success action
+	if s.Handle != nil {
+		return s.Handle(ctx, message)
 	}
 
-	if !s.result.HasFieldFaults() && s.result.Continue() && s.successAction != nil {
-		s.successAction(ctx, s.message, s.result)
-	}
-
-	if s.result.HasFieldFaults() && s.result.Continue() {
-		s.result.SetResponseErr("request message contains invalid values", "")
-	}
-
-	return s.result, nil
+	return res, nil
 }

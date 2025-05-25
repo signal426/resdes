@@ -1,7 +1,10 @@
 syntax = "proto3";
 
+package soldr.v1;
+
+option go_package = "test_protos/soldr/v1;v1";
+
 import "google/protobuf/field_mask.proto";
-package propl.v1;
 
 message Address {
   string line1 = 1;
@@ -20,8 +23,15 @@ message CreateUserRequest {
   User user = 1;
 }
 
+message CreateUserResponse {
+ User user = 1;
+}
 
 message UpdateUserRequest {
   User user = 1;
   google.protobuf.FieldMask update_mask = 2;
+}
+
+message UpdateUserResponse {
+  User user = 1;
 }

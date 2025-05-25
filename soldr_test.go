@@ -3,100 +3,87 @@ package soldr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
-	proplv1 "buf.build/gen/go/signal426/propl/protocolbuffers/go/propl/v1"
+	v1 "github.com/signal426/soldr/test_protos/gen/test_protos/soldr/v1"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
-func TestFieldPolicies(t *testing.T) {
+func TestFieldValidations(t *testing.T) {
 	t.Run("it should validate non-zero", func(t *testing.T) {
 		// arrange
-		req := &proplv1.CreateUserRequest{
-			User: &proplv1.User{},
-		}
+		req := &v1.CreateUserRequest{}
 
-		expected := &ValidationResult{
-			FieldFaults: map[string]string{
-				"user.first_name": ErrMsgFieldCannotBeZero,
-			},
-		}
+		expected := NewValidationResult()
+		expected.AppendFieldFaultErrStr("user", fmt.Sprintf(ErrMsgCannotBeZero, "<nil>"))
+		expected.AppendFieldFaultErrStr("user.first_name", fmt.Sprintf(ErrMsgCannotBeZero, ""))
 
-		p := ForRequest(req).
+		mv := ForMessage[*v1.CreateUserRequest]().
 			AssertNonZero("user", req.GetUser()).
 			AssertNonZero("user.first_name", req.GetUser().GetFirstName())
 
 		// act
-		res, err := p.E(context.Background())
+		err := mv.Exec(context.Background(), req)
 
 		// assert
-		assert.NoError(t, err)
-		assert.Equal(t, expected, res)
-		assert.True(t, res.Failed())
+		assert.Error(t, err)
+		assert.Equal(t, expected.ToErr().Error(), err.Error())
 	})
 
 	t.Run("it should evaluate a custom function", func(t *testing.T) {
 		// arrange
-		req := &proplv1.CreateUserRequest{
-			User: &proplv1.User{
-				FirstName: "Bob",
+		req := &v1.CreateUserRequest{
+			User: &v1.User{
+				FirstName: "bob",
 			},
 		}
 
-		expected := &ValidationResult{
-			FieldFaults: map[string]string{
-				"user.first_name": "cannot be bob",
-			},
-		}
+		expected := NewValidationResult()
+		expected.AppendFieldFaultErrStr("user.first_name", "cannot be bob")
 
-		p := ForRequest(req).
-			CustomValidation(func(ctx context.Context, msg *proplv1.CreateUserRequest, validationResult *ValidationResult) {
+		mv := ForMessage[*v1.CreateUserRequest]().
+			CustomValidation(func(ctx context.Context, msg *v1.CreateUserRequest, validationResult *ValidationResult) error {
 				if msg.GetUser().GetFirstName() == "bob" {
-					validationResult.AddFieldFault("user.first_name", "cannot be bob")
+					validationResult.AppendFieldFaultErrStr("user.first_name", "cannot be bob")
 				}
+				return nil
 			})
 
-		// act
-		res, err := p.E(context.Background())
+			// act
+		err := mv.Exec(context.Background(), req)
 
 		// assert
-		assert.NoError(t, err)
-		assert.Equal(t, expected, res)
-		assert.True(t, res.Failed())
+		assert.Error(t, err)
+		assert.Equal(t, expected.ToErr(), err)
 	})
 
 	t.Run("it should evaluate not eq", func(t *testing.T) {
 		// arrange
-		req := &proplv1.CreateUserRequest{
-			User: &proplv1.User{
+		req := &v1.CreateUserRequest{
+			User: &v1.User{
 				FirstName: "Bob",
 			},
 		}
 
-		expected := &ValidationResult{
-			FieldFaults: map[string]string{
-				"user.first_name": ErrMsgFieldCannotHaveValue + ": bob",
-			},
-		}
-
-		p := ForRequest(req).
+		mv := ForMessage[*v1.CreateUserRequest]().
 			AssertNotEqualTo("user.first_name", req.GetUser().GetFirstName(), "bob")
 
 		// act
-		res, err := p.E(context.Background())
+		err := mv.Exec(context.Background(), req)
 
 		// assert
 		assert.NoError(t, err)
-		assert.Equal(t, expected, res)
 	})
 
 	t.Run("it should validate a complex structure", func(t *testing.T) {
 		// arrange
-		req := &proplv1.UpdateUserRequest{
-			User: &proplv1.User{
+		req := &v1.UpdateUserRequest{
+			User: &v1.User{
 				FirstName: "bob",
-				PrimaryAddress: &proplv1.Address{
+				PrimaryAddress: &v1.Address{
 					Line1: "a",
 					Line2: "b",
 				},
@@ -106,33 +93,31 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		expected := &ValidationResult{
-			FieldFaults: map[string]string{
-				"": "",
-			},
-		}
+		expected := NewValidationResult()
+		expected.AppendFieldFaultErrStr("user.id", fmt.Sprintf(ErrMsgCannotBeZero, ""))
+		expected.AppendFieldFaultErrStr("user.first_name", fmt.Sprintf(ErrMsgFieldsEqual, "bob"))
 
-		p := ForRequest(req, req.GetUpdateMask().Paths...).
+		mv := ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
 			AssertNonZero("user.id", req.GetUser().GetId()).
-			AssertNotEqualTo("user.id", req.GetUser().GetId(), "bob").
+			AssertNotEqualToWhenInMask("user.first_name", req.GetUser().GetId(), "bob").
 			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
 			AssertNonZeroWhenInMask("user.primary_address.line1", req.GetUser().GetPrimaryAddress().GetLine1()).
-			AssertNotEqualToWhenInMask("user.primary_address.last_name", req.GetUser().GetPrimaryAddress().GetLine2(), "b")
+			AssertNotEqualToWhenInMask("user.primary_address.line2", req.GetUser().GetPrimaryAddress().GetLine2(), "b")
 
 		// act
-		res, err := p.E(context.Background())
+		err := mv.Exec(context.Background(), req)
 
 		// assert
-		assert.NoError(t, err)
-		assert.Equal(t, expected, res)
+		assert.Error(t, err)
+		assert.Equal(t, expected.ToErr().Error(), err.Error())
 	})
 
 	t.Run("it should validate custom optional action", func(t *testing.T) {
 		// arrange
-		req := &proplv1.UpdateUserRequest{
-			User: &proplv1.User{
+		req := &v1.UpdateUserRequest{
+			User: &v1.User{
 				FirstName: "bob",
-				PrimaryAddress: &proplv1.Address{
+				PrimaryAddress: &v1.Address{
 					Line1: "a",
 					Line2: "b",
 				},
@@ -142,53 +127,49 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		expected := &ValidationResult{
-			FieldFaults: map[string]string{
-				"some.fake":                  ErrMsgFieldCannotBeZero,
-				"user.id":                    ErrMsgFieldCannotBeZero,
-				"user.last_name":             ErrMsgFieldCannotBeZero,
-				"user.primary_address_line1": ErrMsgFieldCannotHaveValue + ": a",
-			},
-		}
+		expected := NewValidationResult()
+		expected.AppendFieldFaultErrStr("user.primary_address_line1", "cannot be a")
+		expected.AppendFieldFaultErrStr("some.fake", fmt.Sprintf(ErrMsgCannotBeZero, "<nil>"))
+		expected.AppendFieldFaultErrStr("user.last_name", fmt.Sprintf(ErrMsgCannotBeZero, ""))
 
-		// ForSubject(request, options...) instantiates the evaluator
-		p := ForRequest(req).
-			// Specify all of the field paths that should not be equal to their zero value
+		mv := ForMessage[*v1.UpdateUserRequest]().
 			AssertNonZero("user.id", req.GetUser().GetId()).
 			AssertNonZero("some.fake", nil).
 			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
 			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
 			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
-			CustomValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, validationResult *ValidationResult) {
+			CustomValidation(func(ctx context.Context, msg *v1.UpdateUserRequest, validationResult *ValidationResult) error {
 				if req.GetUser().GetPrimaryAddress().GetLine1() == "a" {
-					validationResult.AddFieldFault("user.primary_address_line1", "cannot be a")
+					validationResult.AppendFieldFaultErrStr("user.primary_address_line1", "cannot be a")
 				}
+				return nil
 			})
 
 		// act
-		// call this before running the evaluation in order to substitute your own error result handler
-		// to do things like custom formatting
-		res, err := p.E(context.Background())
+		err := mv.Exec(context.Background(), req)
 
 		// assert
-		assert.NoError(t, err)
-		assert.Equal(t, expected, res)
+		assert.Error(t, err)
+		assert.Equal(t, expected.ToErr().Error(), err.Error())
 	})
+}
 
+func TestArrangements(t *testing.T) {
 	t.Run("it should run a custom action before request field validation", func(t *testing.T) {
 		// arrange
+		expectedErr := errors.New("caller id is empty")
 		authUpdate := func(ctx context.Context) error {
 			callerId := ctx.Value("callerId")
 			if callerId == nil || callerId == "" {
-				return errors.New("caller id is empty")
+				return expectedErr
 			}
 			return nil
 		}
 
-		req := &proplv1.UpdateUserRequest{
-			User: &proplv1.User{
+		req := &v1.UpdateUserRequest{
+			User: &v1.User{
 				FirstName: "bob",
-				PrimaryAddress: &proplv1.Address{
+				PrimaryAddress: &v1.Address{
 					Line1: "a",
 					Line2: "b",
 				},
@@ -198,39 +179,44 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForRequest(req, req.GetUpdateMask().Paths...).
-			BeforeValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, validationResult *ValidationResult) {
-				if err := authUpdate(ctx); err != nil {
-					validationResult.SetResponseErr("request not authorized", err.Error())
-				}
-			}).
-			AssertNonZero("user.id", req.GetUser().GetId()).
-			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
-			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
-			AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress())
-
 		// act
-		_, err := p.E(context.Background())
+		resp, err := Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
+			WithAuth(func(ctx context.Context, _ *v1.UpdateUserRequest) error {
+				return authUpdate(ctx)
+			}).
+			WithValidate(ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
+				AssertNonZero("user", req.GetUser()).
+				AssertNonZero("user.id", req.GetUser().GetId()),
+			).
+			WithHandle(func(ctx context.Context, uur *v1.UpdateUserRequest) (*v1.UpdateUserResponse, error) {
+				return nil, nil
+			}).Exec(context.Background(), req)
 
 		// assert
 		assert.Error(t, err)
+		assert.Equal(t, expectedErr.Error(), err.Error())
+		assert.Nil(t, resp)
 	})
 
 	t.Run("it should run a custom action if validation successful", func(t *testing.T) {
 		// arrange
-		authorizeUpdate := func(ctx context.Context) error {
-			userId := ctx.Value("userId")
-			if userId == nil {
-				return errors.New("cannot resolve request due to missing user id")
-			}
+		authorizeUpdate := func(_ context.Context) error {
 			return nil
 		}
 
-		req := &proplv1.UpdateUserRequest{
-			User: &proplv1.User{
+		uppercaseName := func(_ context.Context, msg *v1.UpdateUserRequest) (*v1.UpdateUserResponse, error) {
+			user := proto.Clone(msg.GetUser()).(*v1.User)
+			user.FirstName = "Bob"
+			return &v1.UpdateUserResponse{
+				User: user,
+			}, nil
+		}
+
+		req := &v1.UpdateUserRequest{
+			User: &v1.User{
 				FirstName: "bob",
-				Id:        "123abc",
-				PrimaryAddress: &proplv1.Address{
+				Id:        "abc123",
+				PrimaryAddress: &v1.Address{
 					Line1: "a",
 					Line2: "b",
 				},
@@ -240,31 +226,30 @@ func TestFieldPolicies(t *testing.T) {
 			},
 		}
 
-		p := ForRequest(req, req.GetUpdateMask().Paths...).
-			AssertNonZero("user.id", req.GetUser().GetId()).
-			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
-			CustomValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, validationResult *ValidationResult) {
-				if msg.GetUser().GetPrimaryAddress() == nil {
-					validationResult.AddFieldFault("user.primary_address", "should not be nil")
-				}
-			}).
-			// runs immediately after field valiadtion
-			AfterValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest, validationResult *ValidationResult) {
-				// can check the field validation results before using a value if need be or just run this function
-				if err := authorizeUpdate(ctx); err != nil {
-					validationResult.SetResponseErr("request not authorized", err.Error())
-				}
-			}).
-			// runs last if all was successful
-			OnSuccess(func(ctx context.Context, msg *proplv1.UpdateUserRequest, validationResult *ValidationResult) {
-				msg.User.LastName = "NA"
-			})
+		rp := Arrangement[*v1.UpdateUserRequest, *v1.UpdateUserResponse]{
+			Auth: func(ctx context.Context, uur *v1.UpdateUserRequest) error {
+				return authorizeUpdate(ctx)
+			},
+			Validate: ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
+				AssertNonZero("user.id", req.GetUser().GetId()).
+				AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
+				CustomValidation(func(ctx context.Context, msg *v1.UpdateUserRequest, validationResult *ValidationResult) error {
+					if msg.GetUser().GetPrimaryAddress() == nil {
+						validationResult.AppendFieldFaultErrStr("user.primary_address", "should not be nil")
+					}
+					return nil
+				}),
+			Handle: func(ctx context.Context, cur *v1.UpdateUserRequest) (*v1.UpdateUserResponse, error) {
+				return uppercaseName(ctx, cur)
+			},
+		}
 
 		// act
-		_, err := p.E(context.Background())
+		res, err := rp.Exec(context.Background(), req)
 
 		// assert
 		assert.NoError(t, err)
-		assert.Equal(t, "NA", req.GetUser().GetLastName())
+		assert.NotNil(t, res)
+		assert.Equal(t, "Bob", res.GetUser().GetFirstName())
 	})
 }
