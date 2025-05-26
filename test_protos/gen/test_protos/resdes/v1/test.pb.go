@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v5.29.3
-// source: test_protos/soldr/v1/test.proto
+// source: resdes/v1/test.proto
 
 package v1
 
@@ -32,7 +32,7 @@ type Address struct {
 
 func (x *Address) Reset() {
 	*x = Address{}
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[0]
+	mi := &file_resdes_v1_test_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -44,7 +44,7 @@ func (x *Address) String() string {
 func (*Address) ProtoMessage() {}
 
 func (x *Address) ProtoReflect() protoreflect.Message {
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[0]
+	mi := &file_resdes_v1_test_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -57,7 +57,7 @@ func (x *Address) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Address.ProtoReflect.Descriptor instead.
 func (*Address) Descriptor() ([]byte, []int) {
-	return file_test_protos_soldr_v1_test_proto_rawDescGZIP(), []int{0}
+	return file_resdes_v1_test_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Address) GetLine1() string {
@@ -87,7 +87,7 @@ type User struct {
 
 func (x *User) Reset() {
 	*x = User{}
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[1]
+	mi := &file_resdes_v1_test_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -99,7 +99,7 @@ func (x *User) String() string {
 func (*User) ProtoMessage() {}
 
 func (x *User) ProtoReflect() protoreflect.Message {
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[1]
+	mi := &file_resdes_v1_test_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -112,7 +112,7 @@ func (x *User) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use User.ProtoReflect.Descriptor instead.
 func (*User) Descriptor() ([]byte, []int) {
-	return file_test_protos_soldr_v1_test_proto_rawDescGZIP(), []int{1}
+	return file_resdes_v1_test_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *User) GetId() string {
@@ -159,7 +159,7 @@ type CreateUserRequest struct {
 
 func (x *CreateUserRequest) Reset() {
 	*x = CreateUserRequest{}
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[2]
+	mi := &file_resdes_v1_test_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -171,7 +171,7 @@ func (x *CreateUserRequest) String() string {
 func (*CreateUserRequest) ProtoMessage() {}
 
 func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[2]
+	mi := &file_resdes_v1_test_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -184,7 +184,7 @@ func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateUserRequest.ProtoReflect.Descriptor instead.
 func (*CreateUserRequest) Descriptor() ([]byte, []int) {
-	return file_test_protos_soldr_v1_test_proto_rawDescGZIP(), []int{2}
+	return file_resdes_v1_test_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreateUserRequest) GetUser() *User {
@@ -203,7 +203,7 @@ type CreateUserResponse struct {
 
 func (x *CreateUserResponse) Reset() {
 	*x = CreateUserResponse{}
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[3]
+	mi := &file_resdes_v1_test_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -215,7 +215,7 @@ func (x *CreateUserResponse) String() string {
 func (*CreateUserResponse) ProtoMessage() {}
 
 func (x *CreateUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[3]
+	mi := &file_resdes_v1_test_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -228,7 +228,7 @@ func (x *CreateUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateUserResponse.ProtoReflect.Descriptor instead.
 func (*CreateUserResponse) Descriptor() ([]byte, []int) {
-	return file_test_protos_soldr_v1_test_proto_rawDescGZIP(), []int{3}
+	return file_resdes_v1_test_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CreateUserResponse) GetUser() *User {
@@ -248,7 +248,7 @@ type UpdateUserRequest struct {
 
 func (x *UpdateUserRequest) Reset() {
 	*x = UpdateUserRequest{}
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[4]
+	mi := &file_resdes_v1_test_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +260,7 @@ func (x *UpdateUserRequest) String() string {
 func (*UpdateUserRequest) ProtoMessage() {}
 
 func (x *UpdateUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[4]
+	mi := &file_resdes_v1_test_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +273,7 @@ func (x *UpdateUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateUserRequest.ProtoReflect.Descriptor instead.
 func (*UpdateUserRequest) Descriptor() ([]byte, []int) {
-	return file_test_protos_soldr_v1_test_proto_rawDescGZIP(), []int{4}
+	return file_resdes_v1_test_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UpdateUserRequest) GetUser() *User {
@@ -299,7 +299,7 @@ type UpdateUserResponse struct {
 
 func (x *UpdateUserResponse) Reset() {
 	*x = UpdateUserResponse{}
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[5]
+	mi := &file_resdes_v1_test_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -311,7 +311,7 @@ func (x *UpdateUserResponse) String() string {
 func (*UpdateUserResponse) ProtoMessage() {}
 
 func (x *UpdateUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_test_protos_soldr_v1_test_proto_msgTypes[5]
+	mi := &file_resdes_v1_test_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -324,7 +324,7 @@ func (x *UpdateUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateUserResponse.ProtoReflect.Descriptor instead.
 func (*UpdateUserResponse) Descriptor() ([]byte, []int) {
-	return file_test_protos_soldr_v1_test_proto_rawDescGZIP(), []int{5}
+	return file_resdes_v1_test_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UpdateUserResponse) GetUser() *User {
@@ -334,62 +334,62 @@ func (x *UpdateUserResponse) GetUser() *User {
 	return nil
 }
 
-var File_test_protos_soldr_v1_test_proto protoreflect.FileDescriptor
+var File_resdes_v1_test_proto protoreflect.FileDescriptor
 
-const file_test_protos_soldr_v1_test_proto_rawDesc = "" +
+const file_resdes_v1_test_proto_rawDesc = "" +
 	"\n" +
-	"\x1ftest_protos/soldr/v1/test.proto\x12\bsoldr.v1\x1a google/protobuf/field_mask.proto\"5\n" +
+	"\x14resdes/v1/test.proto\x12\tresdes.v1\x1a google/protobuf/field_mask.proto\"5\n" +
 	"\aAddress\x12\x14\n" +
 	"\x05line1\x18\x01 \x01(\tR\x05line1\x12\x14\n" +
-	"\x05line2\x18\x02 \x01(\tR\x05line2\"\xd2\x01\n" +
+	"\x05line2\x18\x02 \x01(\tR\x05line2\"\xd4\x01\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
 	"first_name\x18\x02 \x01(\tR\tfirstName\x12\x1b\n" +
-	"\tlast_name\x18\x04 \x01(\tR\blastName\x12:\n" +
-	"\x0fprimary_address\x18\x05 \x01(\v2\x11.soldr.v1.AddressR\x0eprimaryAddress\x12B\n" +
-	"\x13secondary_addresses\x18\x06 \x03(\v2\x11.soldr.v1.AddressR\x12secondaryAddresses\"7\n" +
-	"\x11CreateUserRequest\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.soldr.v1.UserR\x04user\"8\n" +
-	"\x12CreateUserResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.soldr.v1.UserR\x04user\"t\n" +
-	"\x11UpdateUserRequest\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.soldr.v1.UserR\x04user\x12;\n" +
+	"\tlast_name\x18\x04 \x01(\tR\blastName\x12;\n" +
+	"\x0fprimary_address\x18\x05 \x01(\v2\x12.resdes.v1.AddressR\x0eprimaryAddress\x12C\n" +
+	"\x13secondary_addresses\x18\x06 \x03(\v2\x12.resdes.v1.AddressR\x12secondaryAddresses\"8\n" +
+	"\x11CreateUserRequest\x12#\n" +
+	"\x04user\x18\x01 \x01(\v2\x0f.resdes.v1.UserR\x04user\"9\n" +
+	"\x12CreateUserResponse\x12#\n" +
+	"\x04user\x18\x01 \x01(\v2\x0f.resdes.v1.UserR\x04user\"u\n" +
+	"\x11UpdateUserRequest\x12#\n" +
+	"\x04user\x18\x01 \x01(\v2\x0f.resdes.v1.UserR\x04user\x12;\n" +
 	"\vupdate_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskR\n" +
-	"updateMask\"8\n" +
-	"\x12UpdateUserResponse\x12\"\n" +
-	"\x04user\x18\x01 \x01(\v2\x0e.soldr.v1.UserR\x04userB\x19Z\x17test_protos/soldr/v1;v1b\x06proto3"
+	"updateMask\"9\n" +
+	"\x12UpdateUserResponse\x12#\n" +
+	"\x04user\x18\x01 \x01(\v2\x0f.resdes.v1.UserR\x04userB\x1aZ\x18test_protos/resdes/v1;v1b\x06proto3"
 
 var (
-	file_test_protos_soldr_v1_test_proto_rawDescOnce sync.Once
-	file_test_protos_soldr_v1_test_proto_rawDescData []byte
+	file_resdes_v1_test_proto_rawDescOnce sync.Once
+	file_resdes_v1_test_proto_rawDescData []byte
 )
 
-func file_test_protos_soldr_v1_test_proto_rawDescGZIP() []byte {
-	file_test_protos_soldr_v1_test_proto_rawDescOnce.Do(func() {
-		file_test_protos_soldr_v1_test_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_test_protos_soldr_v1_test_proto_rawDesc), len(file_test_protos_soldr_v1_test_proto_rawDesc)))
+func file_resdes_v1_test_proto_rawDescGZIP() []byte {
+	file_resdes_v1_test_proto_rawDescOnce.Do(func() {
+		file_resdes_v1_test_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_resdes_v1_test_proto_rawDesc), len(file_resdes_v1_test_proto_rawDesc)))
 	})
-	return file_test_protos_soldr_v1_test_proto_rawDescData
+	return file_resdes_v1_test_proto_rawDescData
 }
 
-var file_test_protos_soldr_v1_test_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
-var file_test_protos_soldr_v1_test_proto_goTypes = []any{
-	(*Address)(nil),               // 0: soldr.v1.Address
-	(*User)(nil),                  // 1: soldr.v1.User
-	(*CreateUserRequest)(nil),     // 2: soldr.v1.CreateUserRequest
-	(*CreateUserResponse)(nil),    // 3: soldr.v1.CreateUserResponse
-	(*UpdateUserRequest)(nil),     // 4: soldr.v1.UpdateUserRequest
-	(*UpdateUserResponse)(nil),    // 5: soldr.v1.UpdateUserResponse
+var file_resdes_v1_test_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_resdes_v1_test_proto_goTypes = []any{
+	(*Address)(nil),               // 0: resdes.v1.Address
+	(*User)(nil),                  // 1: resdes.v1.User
+	(*CreateUserRequest)(nil),     // 2: resdes.v1.CreateUserRequest
+	(*CreateUserResponse)(nil),    // 3: resdes.v1.CreateUserResponse
+	(*UpdateUserRequest)(nil),     // 4: resdes.v1.UpdateUserRequest
+	(*UpdateUserResponse)(nil),    // 5: resdes.v1.UpdateUserResponse
 	(*fieldmaskpb.FieldMask)(nil), // 6: google.protobuf.FieldMask
 }
-var file_test_protos_soldr_v1_test_proto_depIdxs = []int32{
-	0, // 0: soldr.v1.User.primary_address:type_name -> soldr.v1.Address
-	0, // 1: soldr.v1.User.secondary_addresses:type_name -> soldr.v1.Address
-	1, // 2: soldr.v1.CreateUserRequest.user:type_name -> soldr.v1.User
-	1, // 3: soldr.v1.CreateUserResponse.user:type_name -> soldr.v1.User
-	1, // 4: soldr.v1.UpdateUserRequest.user:type_name -> soldr.v1.User
-	6, // 5: soldr.v1.UpdateUserRequest.update_mask:type_name -> google.protobuf.FieldMask
-	1, // 6: soldr.v1.UpdateUserResponse.user:type_name -> soldr.v1.User
+var file_resdes_v1_test_proto_depIdxs = []int32{
+	0, // 0: resdes.v1.User.primary_address:type_name -> resdes.v1.Address
+	0, // 1: resdes.v1.User.secondary_addresses:type_name -> resdes.v1.Address
+	1, // 2: resdes.v1.CreateUserRequest.user:type_name -> resdes.v1.User
+	1, // 3: resdes.v1.CreateUserResponse.user:type_name -> resdes.v1.User
+	1, // 4: resdes.v1.UpdateUserRequest.user:type_name -> resdes.v1.User
+	6, // 5: resdes.v1.UpdateUserRequest.update_mask:type_name -> google.protobuf.FieldMask
+	1, // 6: resdes.v1.UpdateUserResponse.user:type_name -> resdes.v1.User
 	7, // [7:7] is the sub-list for method output_type
 	7, // [7:7] is the sub-list for method input_type
 	7, // [7:7] is the sub-list for extension type_name
@@ -397,26 +397,26 @@ var file_test_protos_soldr_v1_test_proto_depIdxs = []int32{
 	0, // [0:7] is the sub-list for field type_name
 }
 
-func init() { file_test_protos_soldr_v1_test_proto_init() }
-func file_test_protos_soldr_v1_test_proto_init() {
-	if File_test_protos_soldr_v1_test_proto != nil {
+func init() { file_resdes_v1_test_proto_init() }
+func file_resdes_v1_test_proto_init() {
+	if File_resdes_v1_test_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_test_protos_soldr_v1_test_proto_rawDesc), len(file_test_protos_soldr_v1_test_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_resdes_v1_test_proto_rawDesc), len(file_resdes_v1_test_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_test_protos_soldr_v1_test_proto_goTypes,
-		DependencyIndexes: file_test_protos_soldr_v1_test_proto_depIdxs,
-		MessageInfos:      file_test_protos_soldr_v1_test_proto_msgTypes,
+		GoTypes:           file_resdes_v1_test_proto_goTypes,
+		DependencyIndexes: file_resdes_v1_test_proto_depIdxs,
+		MessageInfos:      file_resdes_v1_test_proto_msgTypes,
 	}.Build()
-	File_test_protos_soldr_v1_test_proto = out.File
-	file_test_protos_soldr_v1_test_proto_goTypes = nil
-	file_test_protos_soldr_v1_test_proto_depIdxs = nil
+	File_resdes_v1_test_proto = out.File
+	file_resdes_v1_test_proto_goTypes = nil
+	file_resdes_v1_test_proto_depIdxs = nil
 }

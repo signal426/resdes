@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package soldr.v1;
+package resdes.v1;
 
-option go_package = "test_protos/soldr/v1;v1";
+option go_package = "test_protos/resdes/v1;v1";
 
 import "google/protobuf/field_mask.proto";
 

@@ -1,17 +1,9 @@
-package soldr
+package resdes
 
 import (
-	"fmt"
 	"reflect"
 
 	"github.com/google/go-cmp/cmp"
-)
-
-var (
-	ErrMsgFieldNotComparable string = "expected type %v but got %v"
-	ErrMsgFieldsNotEqual     string = "expected value to be equal to %v but received %v"
-	ErrMsgFieldsEqual        string = "expected value to not be equal to %v"
-	ErrMsgCannotBeZero       string = "expected non-zero but got %v"
 )
 
 func isZero(i any) bool {
@@ -28,24 +20,27 @@ func isZero(i any) bool {
 }
 
 type Field struct {
-	path      string
-	value     any
-	inMask    bool
-	zero      bool
-	policy    Policy
-	condition Condition
-	cmpTo     any
+	path           string
+	pathNormalized string
+	value          any
+	inMask         bool
+	zero           bool
+	policy         Policy
+	condition      Condition
+	cmpTo          any
 }
 
-func NewField(path string, value any, inMask bool, policy Policy, condition Condition, cmpTo any) *Field {
+func NewField(path string, value any, policy Policy, condition Condition, cmpTo any, paths map[string]struct{}) *Field {
+	normalizedPath := NormalizePath(path)
 	return &Field{
-		path:      path,
-		value:     value,
-		inMask:    inMask,
-		policy:    policy,
-		condition: condition,
-		zero:      isZero(value),
-		cmpTo:     cmpTo,
+		path:           path,
+		value:          value,
+		inMask:         IsPathInMask(normalizedPath, paths),
+		policy:         policy,
+		condition:      condition,
+		zero:           isZero(value),
+		pathNormalized: normalizedPath,
+		cmpTo:          cmpTo,
 	}
 }
 
@@ -55,7 +50,7 @@ func (f Field) Validate() error {
 	}
 	if f.policy == NonZero {
 		if f.zero {
-			return fmt.Errorf(ErrMsgCannotBeZero, f.value)
+			return newFieldMustNotBeZeroFailedErr(f.path, f.value)
 		}
 		return nil
 	}
@@ -64,15 +59,34 @@ func (f Field) Validate() error {
 		return err
 	}
 	if f.policy == NotEqualTo && eq {
-		return fmt.Errorf(ErrMsgFieldsEqual, f.cmpTo)
+		return newFieldMustNotEqualFailedErr(f.path, f.cmpTo)
 	}
 	if f.policy == MustEqual && !eq {
-		return fmt.Errorf(ErrMsgFieldsNotEqual, f.cmpTo, f.value)
+		return newFieldMustEqualFailedErr(f.path, f.cmpTo, f.value)
 	}
 	return nil
 }
 
-func (f Field) GetValue() any {
+func (f Field) Policy() Policy {
+	return f.policy
+}
+
+func (f Field) CompareTo() any {
+	return f.cmpTo
+}
+
+func (f Field) Condition() Condition {
+	return f.condition
+}
+
+func (f Field) Path(normalized bool) string {
+	if normalized {
+		return f.pathNormalized
+	}
+	return f.path
+}
+
+func (f Field) Value() any {
 	return f.value
 }
 
@@ -92,7 +106,7 @@ func (f Field) checkEquals() (bool, error) {
 	fieldCmpType := reflect.TypeOf(f.value)
 	compareToType := reflect.TypeOf(f.cmpTo)
 	if fieldCmpType != compareToType {
-		return false, fmt.Errorf(ErrMsgFieldNotComparable, fieldCmpType, compareToType)
+		return false, newFieldsNotComparableErr(f.path, fieldCmpType, compareToType)
 	}
 	return cmp.Equal(f.value, f.cmpTo), nil
 }
