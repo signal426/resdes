@@ -1,7 +1,7 @@
 ## Response Designer
 
 ![Build](https://github.com/signal426/resdes/actions/workflows/test.yaml/badge.svg)
-[![Go Reference](https://pkg.go.dev/badge/github.com/YOUR_ORG/pilot.svg)](https://pkg.go.dev/github.com/YOUR_ORG/pilot)
+[![Go Reference](https://pkg.go.dev/badge/github.com/signal426/resdes.svg)](https://pkg.go.dev/github.com/signal426/resdes)
 ![Version](https://img.shields.io/github/v/tag/YOUR_ORG/pilot?label=version)
 
 Removes boilerplate from serving protobuf-based requests.
