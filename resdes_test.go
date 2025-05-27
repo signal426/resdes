@@ -222,7 +222,7 @@ func TestArrangements(t *testing.T) {
 		}
 
 		// act
-		resp, err := Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
+		response := Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
 			WithAuth(func(ctx context.Context, _ *v1.UpdateUserRequest) error {
 				return authUpdate(ctx)
 			}).
@@ -235,11 +235,11 @@ func TestArrangements(t *testing.T) {
 			}).Exec(context.Background(), req)
 
 		// assert
-		assert.Error(t, err)
-		assert.Equal(t, expectedErr.Error(), err.Error())
-		assert.Nil(t, resp)
-		assert.Nil(t, err.GetValidationErrors())
-		assert.Nil(t, err.GetServeError())
+		assert.Error(t, response.Error())
+		assert.Equal(t, expectedErr.Error(), response.Error().Error())
+		assert.Nil(t, response.Data())
+		assert.Nil(t, response.Error().GetValidationErrors())
+		assert.Nil(t, response.Error().GetServeError())
 	})
 
 	t.Run("it should run success action if no errors", func(t *testing.T) {
@@ -289,12 +289,12 @@ func TestArrangements(t *testing.T) {
 		}
 
 		// act
-		res, err := rp.Exec(context.Background(), req)
+		response := rp.Exec(context.Background(), req)
 
 		// assert
-		assert.Nil(t, err)
-		assert.NotNil(t, res)
-		assert.Equal(t, "Bob", res.GetUser().GetFirstName())
+		assert.Nil(t, response.Error())
+		assert.NotNil(t, response.Data())
+		assert.Equal(t, "Bob", response.Data().GetUser().GetFirstName())
 	})
 
 	t.Run("it should return validation errors in main error object", func(t *testing.T) {
@@ -313,7 +313,7 @@ func TestArrangements(t *testing.T) {
 		}
 
 		// act
-		resp, err := Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
+		response := Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
 			WithAuth(func(ctx context.Context, _ *v1.UpdateUserRequest) error {
 				return nil
 			}).
@@ -326,10 +326,11 @@ func TestArrangements(t *testing.T) {
 			}).Exec(context.Background(), req)
 
 		// assert
-		assert.Error(t, err)
-		assert.Nil(t, resp)
+		assert.Error(t, response.Error())
+		assert.Nil(t, response.Data())
+
 		var ae *ValidationErrors
-		assert.ErrorAs(t, err, &ae)
+		assert.ErrorAs(t, response.Error(), &ae)
 		assert.Len(t, ae.FieldErrors, 1)
 		inMap := ae.AsMap()["user.id"]
 		assert.NotNil(t, inMap)

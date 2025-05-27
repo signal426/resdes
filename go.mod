@@ -3,6 +3,7 @@ module github.com/signal426/resdes
 go 1.24.1
 
 require (
+	connectrpc.com/connect v1.18.1
 	github.com/google/go-cmp v0.7.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.72.1

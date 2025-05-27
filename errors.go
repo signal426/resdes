@@ -114,25 +114,28 @@ func (e *Error) Unwrap() error {
 	return nil
 }
 
-func (e *Error) SetAuthError(err error) {
+func (e *Error) SetAuthError(err error) *Error {
 	if e == nil {
 		e = &Error{}
 	}
 	e.AuthError = NewAuthError(err)
+	return e
 }
 
-func (e *Error) SetValidationErrors(err error) {
+func (e *Error) SetValidationErrors(err error) *Error {
 	if e == nil {
 		e = &Error{}
 	}
 	e.ValidationErrs = ValidationErrorsFromErr(err)
+	return e
 }
 
-func (e *Error) SetServeError(err error) {
+func (e *Error) SetServeError(err error) *Error {
 	if e == nil {
 		e = &Error{}
 	}
 	e.ServeError = NewServeError(err)
+	return e
 }
 
 func (e *Error) GetAuthError() *AuthError {

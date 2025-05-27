@@ -8,6 +8,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type Stage string
+
+var (
+	AuthStage     Stage = "auth"
+	ValidateStage Stage = "validate"
+	ServeStage    Stage = "serve"
+)
+
 // Auther a function to run before validation or request serve
 type Auther[T proto.Message] func(context.Context, T) error
 
@@ -25,6 +33,7 @@ type MessageValidator[T proto.Message] interface {
 
 var _ MessageValidator[proto.Message] = (*DefaultMessageValidator[proto.Message])(nil)
 
+// DefaultMessageValidator default implementation of MessaageValidator[proto.Message]
 type DefaultMessageValidator[T proto.Message] struct {
 	// custom validation func. Only one can be set per validator instance
 	customValidation Validator[T]
@@ -138,21 +147,21 @@ func Arrange[T proto.Message, U any]() *Arrangement[T, U] {
 }
 
 // Add an Auth behavior
-func (r *Arrangement[T, U]) WithAuth(act Auther[T]) *Arrangement[T, U] {
-	r.Auth = act
-	return r
+func (a *Arrangement[T, U]) WithAuth(act Auther[T]) *Arrangement[T, U] {
+	a.Auth = act
+	return a
 }
 
 // Add a Validate behavior
-func (r *Arrangement[T, U]) WithValidate(fv MessageValidator[T]) *Arrangement[T, U] {
-	r.Validate = fv
-	return r
+func (a *Arrangement[T, U]) WithValidate(mv MessageValidator[T]) *Arrangement[T, U] {
+	a.Validate = mv
+	return a
 }
 
 // Add a Serve behavior
-func (r *Arrangement[T, U]) WithServe(act Server[T, U]) *Arrangement[T, U] {
-	r.Serve = act
-	return r
+func (a *Arrangement[T, U]) WithServe(act Server[T, U]) *Arrangement[T, U] {
+	a.Serve = act
+	return a
 }
 
 // Exec runs in the following order:
@@ -160,34 +169,35 @@ func (r *Arrangement[T, U]) WithServe(act Server[T, U]) *Arrangement[T, U] {
 // 2. Validate
 // 3. Serve
 // The function exits if any error is encountered at any stage
-func (s *Arrangement[T, U]) Exec(ctx context.Context, message T) (U, *Error) {
-	// process the init action, if err, return
-	var res U
-	serr := &Error{}
-	if s.Auth != nil {
-		if err := s.Auth(ctx, message); err != nil {
-			serr.SetAuthError(err)
-			return res, serr
+func (a *Arrangement[T, U]) Exec(ctx context.Context, message T) *Response[U] {
+	// error container
+	execErr := &Error{}
+
+	// new empty response
+	response := NewEmptyResponse[U](ctx)
+
+	// run initial action
+	if a.Auth != nil {
+		if err := a.Auth(ctx, message); err != nil {
+			return response.SetError(AuthStage, execErr.SetAuthError(err))
 		}
 	}
 
 	// validate fields if we have basic field validations
-	if s.Validate != nil {
-		if err := s.Validate.Exec(ctx, message); err != nil {
-			serr.SetValidationErrors(err)
-			return res, serr
+	if a.Validate != nil {
+		if err := a.Validate.Exec(ctx, message); err != nil {
+			return response.SetError(ValidateStage, execErr.SetValidationErrors(err))
 		}
 	}
 
 	// if no field faults, run success action
-	if s.Serve != nil {
-		var err error
-		res, err = s.Serve(ctx, message)
+	if a.Serve != nil {
+		serveResponse, err := a.Serve(ctx, message)
 		if err != nil {
-			serr.SetServeError(err)
-			return res, serr
+			return response.SetError(ServeStage, execErr.SetServeError(err))
 		}
+		response.SetData(serveResponse)
 	}
 
-	return res, nil
+	return response
 }
