@@ -2,7 +2,7 @@
 
 ![Build](https://github.com/signal426/resdes/actions/workflows/test.yaml/badge.svg)
 [![Go Reference](https://pkg.go.dev/badge/github.com/signal426/resdes.svg)](https://pkg.go.dev/github.com/signal426/resdes)
-![Version](https://img.shields.io/github/v/tag/YOUR_ORG/pilot?label=version)
+![Version](https://img.shields.io/github/v/tag/signal426/resdes?label=version)
 
 Removes boilerplate from serving protobuf-based requests.
 
