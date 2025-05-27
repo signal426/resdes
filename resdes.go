@@ -8,14 +8,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Auther a function to run before validation or request serve
+type Auther[T proto.Message] func(context.Context, T) error
+
 // Validator function accepts a context, some message, and pointer to current list of ValidationErrors
 type Validator[T proto.Message] func(context.Context, T, *ValidationErrors) error
 
 // Server a function to run if all other stages of a request arrangement have passed
 type Server[T proto.Message, U any] func(context.Context, T) (U, error)
-
-// Auther a function to run before validation or request serve
-type Auther[T proto.Message] func(context.Context, T) error
 
 // MessageValidator responsible for validating supplied fields and returning
 // the results in a ValidationErrors object
@@ -84,7 +84,8 @@ func (s *DefaultMessageValidator[T]) AssertEqualToWhenInMask(path string, value 
 // CustomValidation is a custom validation function. There can only be one per-validator instance.
 // To add field-level errors to the existing list of field validation errors (in the case regular Assertxxx functions are used),
 // add the errors to the ValidationErrors object and return nil.
-// In the case a non-field level error occurs, return the err
+//
+// In the case that a non-field level error occurs, return the err
 func (s *DefaultMessageValidator[T]) CustomValidation(act Validator[T]) *DefaultMessageValidator[T] {
 	s.customValidation = act
 	return s
@@ -96,6 +97,7 @@ func (s *DefaultMessageValidator[T]) CustomValidation(act Validator[T]) *Default
 func (s *DefaultMessageValidator[T]) Exec(ctx context.Context, message T) *ValidationErrors {
 	errs := NewValidationErrors()
 	if s.customValidation != nil {
+		// if the validation error is simply returned, continue
 		if err := s.customValidation(ctx, message, errs); err != nil && !errors.Is(err, errs) {
 			errs.SetCustomValidationErr(fmt.Errorf("an error occurred during custom message validation: %w", err))
 		}
@@ -130,20 +132,24 @@ type Arrangement[T proto.Message, U any] struct {
 	Serve Server[T, U]
 }
 
+// Instantiate a new Arrangement to build
 func Arrange[T proto.Message, U any]() *Arrangement[T, U] {
 	return &Arrangement[T, U]{}
 }
 
+// Add an Auth behavior
 func (r *Arrangement[T, U]) WithAuth(act Auther[T]) *Arrangement[T, U] {
 	r.Auth = act
 	return r
 }
 
+// Add a Validate behavior
 func (r *Arrangement[T, U]) WithValidate(fv MessageValidator[T]) *Arrangement[T, U] {
 	r.Validate = fv
 	return r
 }
 
+// Add a Serve behavior
 func (r *Arrangement[T, U]) WithServe(act Server[T, U]) *Arrangement[T, U] {
 	r.Serve = act
 	return r

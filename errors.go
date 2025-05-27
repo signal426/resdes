@@ -81,6 +81,27 @@ type Error struct {
 	ServeError     *ServeErr
 }
 
+func NewError(errs ...error) *Error {
+	var err *Error
+	if len(errs) > 0 {
+		for _, e := range errs {
+			if err == nil && errors.As(e, &err) {
+				return err
+			}
+			if errors.Is(e, err.AuthError) {
+				err.SetAuthError(e)
+			}
+			if errors.Is(e, err.ValidationErrs) {
+				err.SetValidationErrors(e)
+			}
+			if errors.Is(e, err.ServeError) {
+				err.SetServeError(e)
+			}
+		}
+	}
+	return err
+}
+
 func (e *Error) Unwrap() error {
 	switch {
 	case e.GetAuthError() != nil:
@@ -94,14 +115,23 @@ func (e *Error) Unwrap() error {
 }
 
 func (e *Error) SetAuthError(err error) {
+	if e == nil {
+		e = &Error{}
+	}
 	e.AuthError = NewAuthError(err)
 }
 
-func (e *Error) SetValidationErrors(errs *ValidationErrors) {
-	e.ValidationErrs = errs
+func (e *Error) SetValidationErrors(err error) {
+	if e == nil {
+		e = &Error{}
+	}
+	e.ValidationErrs = ValidationErrorsFromErr(err)
 }
 
 func (e *Error) SetServeError(err error) {
+	if e == nil {
+		e = &Error{}
+	}
 	e.ServeError = NewServeError(err)
 }
 
@@ -161,6 +191,14 @@ type ValidationErrors struct {
 	FieldErrors           []*FieldError
 	CustomValidationError error
 	idx                   map[string]int
+}
+
+func ValidationErrorsFromErr(err error) *ValidationErrors {
+	var ve *ValidationErrors
+	if errors.As(err, &ve) {
+		return ve
+	}
+	return nil
 }
 
 func NewValidationErrors() *ValidationErrors {

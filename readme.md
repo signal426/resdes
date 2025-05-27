@@ -1,57 +1,64 @@
-## Soldr
+## Response Designer
 
-A way to set policies on proto fields without writing a ton of `if` statements. This was made for readability and reduction of human error -- although
-not slow, it achieves a nice API through reflection and recursion, so not the same scale as the `if` statement route.
+Removes boilerplate from serving protobuf-based requests.
 
-###  Usage
-Example:
+### Install
+`go get github.com/signal426/resdes`
+
+### Field Validation
+The default message validator utilizes a fluent API to compose a set of policies and conditions under which a field must exist. Any
+exceptions to this policy are added to the `ValidatorErrors` object. To handle fields in a custom way, use the `Validator` function through
+the `CustomValidation` API. There can only be one custom function per-instance. To add field-level errors, simply add to the error object passed
+in and return nil. For any errors that occur outside of the field-level (i.e. io, etc...), return the error.
+
+### Response Arrangement
+
+#### Auth
+The Auth stage is where the first function is called. Any errors returned from this stage will return an error immediately.
+
+#### Validation
+The Validation stage is a plug-able stage. It can be executed independent of an arrangement, and can also be passed into compose
+an arrangement. Any errors returned from this stage will return an error immediately.
+
+#### Serve
+The Serve stage is the last function to be executed and only if any previously declared stages have executed successfully. 
+
+### Error Types
+
+### Examples
+
+#### Field validation only
 ```go
-authorizeUpdate := func(_ context.Context, userId string) error {
-	if userId != "abc123" {
-		return errors.New("can only update user abc123")
-	}
-	return nil
-}
-
-doLogic := func(_ context.Context, msg *proplv1.UpdateUserRequest) error {
-	if msg.GetUser().GetLastName() == "" {
-		msg.GetUser().LastName = "NA"
-	}
-	return nil
-}
-
-req := &proplv1.UpdateUserRequest{
-	User: &proplv1.User{
-		FirstName: "bob",
-		Id:        "123abc",
-		PrimaryAddress: &proplv1.Address{
-			Line1: "a",
-			Line2: "b",
-		},
-	},
-	UpdateMask: &fieldmaskpb.FieldMask{
-		Paths: []string{"first_name", "last_name"},
-	},
-}
-
-p := ForSubject(req, req.GetUpdateMask().Paths...).
-	BeforeValidation(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
-		return authorizeUpdate(ctx, msg.GetUser().GetId())
-	}).
+mv := resdes.ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
 	AssertNonZero("user.id", req.GetUser().GetId()).
-	AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
+	AssertNotEqualToWhenInMask("user.first_name", req.GetUser().GetFirstName(), "bob").
 	AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
-	AssertNonZeroWhenInMask("user.primary_address", req.GetUser().GetPrimaryAddress()).
-	OnSuccess(func(ctx context.Context, msg *proplv1.UpdateUserRequest) error {
-		return doLogic(ctx, msg)
+	AssertNonZeroWhenInMask("user.primary_address.line1", req.GetUser().GetPrimaryAddress().GetLine1()).
+	AssertNotEqualToWhenInMask("user.primary_address.line2", req.GetUser().GetPrimaryAddress().GetLine2(), "b").
+	CustomValidation(func(ctx context.Context, uur *v1.UpdateUserRequest, ve *ValidationErrors) error {
+		if uur.GetUser().GetId() == "abc123" {
+			ve.AddFieldErr("user.id", errors.New("user id cannot be abc123"))
+		}
+		// return nil if only adding field-level errors
+		return nil
 	})
-
-// act
-err := p.E(context.Background())
-
-// assert
-assert.NoError(t, err)
-assert.Equal(t, req.GetUser().GetLastName(), "NA")
 ```
-Any field on the message not specified in the request policy does not get evaluated.
 
+#### Full request handling
+```go
+resp, err := resdes.Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
+	WithAuth(func(ctx context.Context, _ *v1.UpdateUserRequest) error {
+		return authUpdate(ctx)
+	}).
+	WithValidate(resdes.ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
+		AssertNonZero("user", req.GetUser()).
+		AssertNonZero("user.id", req.GetUser().GetId()),
+	).
+	WithServe(func(ctx context.Context, uur *v1.UpdateUserRequest) (*v1.UpdateUserResponse, error) {
+		return someBusinessLogic(ctx, uur)
+	}).Exec(context.Background(), req)
+```
+
+#### Error transformations 
+```go
+```

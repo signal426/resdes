@@ -302,4 +302,42 @@ func TestArrangements(t *testing.T) {
 		assert.NotNil(t, res)
 		assert.Equal(t, "Bob", res.GetUser().GetFirstName())
 	})
+
+	t.Run("it should return validation errors in main error object", func(t *testing.T) {
+		// arrange
+		req := &v1.UpdateUserRequest{
+			User: &v1.User{
+				FirstName: "bob",
+				PrimaryAddress: &v1.Address{
+					Line1: "a",
+					Line2: "b",
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{"user.firstName", "user.lastName"},
+			},
+		}
+
+		// act
+		resp, err := Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
+			WithAuth(func(ctx context.Context, _ *v1.UpdateUserRequest) error {
+				return nil
+			}).
+			WithValidate(ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
+				AssertNonZero("user", req.GetUser()).
+				AssertNonZero("user.id", req.GetUser().GetId()),
+			).
+			WithServe(func(ctx context.Context, uur *v1.UpdateUserRequest) (*v1.UpdateUserResponse, error) {
+				return nil, nil
+			}).Exec(context.Background(), req)
+
+		// assert
+		assert.Error(t, err)
+		assert.Nil(t, resp)
+		var ae *ValidationErrors
+		assert.ErrorAs(t, err, &ae)
+		assert.Len(t, ae.FieldErrors, 1)
+		inMap := ae.AsMap()["user.id"]
+		assert.NotNil(t, inMap)
+	})
 }
