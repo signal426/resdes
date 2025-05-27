@@ -37,7 +37,7 @@ you'd like for downstream handling.
 
 #### Field validation only
 ```go
-mv := resdes.ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
+err := resdes.ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
 	AssertNonZero("user.id", req.GetUser().GetId()).
 	AssertNotEqualToWhenInMask("user.first_name", req.GetUser().GetFirstName(), "bob").
 	AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
@@ -49,7 +49,7 @@ mv := resdes.ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...
 		}
 		// return nil if only adding field-level errors
 		return nil
-	})
+	}).Exec(ctx, req)
 ```
 
 #### Full request handling

@@ -30,12 +30,11 @@ func TestFieldValidations(t *testing.T) {
 			},
 		}
 
-		mv := ForMessage[*v1.CreateUserRequest]().
-			AssertNonZero("user", req.GetUser()).
-			AssertNonZero("user.first_name", req.GetUser().GetFirstName())
-
 		// act
-		err := mv.Exec(context.Background(), req)
+		err := ForMessage[*v1.CreateUserRequest]().
+			AssertNonZero("user", req.GetUser()).
+			AssertNonZero("user.first_name", req.GetUser().GetFirstName()).
+			Exec(context.Background(), req)
 
 		// assert
 		assert.Error(t, err)
@@ -59,11 +58,10 @@ func TestFieldValidations(t *testing.T) {
 			},
 		}
 
-		mv := ForMessage[*v1.CreateUserRequest]().
-			AssertNotEqualTo("user.first_name", req.GetUser().GetFirstName(), "bob")
-
-			// act
-		err := mv.Exec(context.Background(), req)
+		// act
+		err := ForMessage[*v1.CreateUserRequest]().
+			AssertNotEqualTo("user.first_name", req.GetUser().GetFirstName(), "bob").
+			Exec(context.Background(), req)
 
 		// assert
 		assert.Error(t, err)
@@ -88,11 +86,10 @@ func TestFieldValidations(t *testing.T) {
 			},
 		}
 
-		mv := ForMessage[*v1.CreateUserRequest]().
-			AssertEqualTo("user.first_name", req.GetUser().GetFirstName(), "bob")
-
 		// act
-		err := mv.Exec(context.Background(), req)
+		err := ForMessage[*v1.CreateUserRequest]().
+			AssertEqualTo("user.first_name", req.GetUser().GetFirstName(), "bob").
+			Exec(context.Background(), req)
 
 		// assert
 		assert.Error(t, err)
@@ -126,7 +123,8 @@ func TestFieldValidations(t *testing.T) {
 			},
 		}
 
-		mv := ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
+		// act
+		err := ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
 			AssertNonZero("user.id", req.GetUser().GetId()).
 			AssertNotEqualToWhenInMask("user.first_name", req.GetUser().GetFirstName(), "bob").
 			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
@@ -137,10 +135,7 @@ func TestFieldValidations(t *testing.T) {
 					ve.AddFieldErr("user.id", errors.New("user id cannot be abc123"))
 				}
 				return nil
-			})
-
-		// act
-		err := mv.Exec(context.Background(), req)
+			}).Exec(context.Background(), req)
 
 		// assert
 		assert.Error(t, err)
@@ -183,15 +178,14 @@ func TestFieldValidations(t *testing.T) {
 			},
 		}
 
-		mv := ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
+		// act
+		err := ForMessage[*v1.UpdateUserRequest](req.GetUpdateMask().GetPaths()...).
 			AssertNonZero("user.id", req.GetUser().GetId()).
 			AssertNonZeroWhenInMask("user.first_name", req.GetUser().GetFirstName()).
 			AssertNonZeroWhenInMask("user.last_name", req.GetUser().GetLastName()).
 			AssertEqualToWhenInMask("user.primary_address.line1", req.GetUser().GetPrimaryAddress().GetLine1(), "abc").
-			AssertNotEqualToWhenInMask("user.primary_address.line2", req.GetUser().GetPrimaryAddress().GetLine2(), "bca")
-
-		// act
-		err := mv.Exec(context.Background(), req)
+			AssertNotEqualToWhenInMask("user.primary_address.line2", req.GetUser().GetPrimaryAddress().GetLine2(), "bca").
+			Exec(context.Background(), req)
 
 		// assert
 		assert.Error(t, err)
