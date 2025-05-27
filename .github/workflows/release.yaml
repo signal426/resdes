@@ -1,12 +1,16 @@
 name: Semantic Release
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run semantic-release in dry-run mode'
+        required: false
+        default: 'false'
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -18,11 +22,15 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Install dependencies
+    - name: Install semantic-release and plugins
       run: npm install -g semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github
 
-    - name: Run semantic release
+    - name: Run semantic-release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: semantic-release
-
+      run: |
+        if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+          semantic-release --dry-run
+        else
+          semantic-release
+        fi
