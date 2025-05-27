@@ -24,6 +24,14 @@ an arrangement. Any errors returned from this stage will return an error immedia
 The Serve stage is the last function to be executed and only if any previously declared stages have executed successfully. 
 
 ### Error Types
+Calling
+`.Exec(ctx, request)`
+on an arragement returns 2 values:
+- the response object
+- an error object
+
+All errors implement the error interface, so simply calling `.Error()` will give you the error message that you can wrap however
+you'd like for downstream handling. 
 
 ### Examples
 
@@ -57,8 +65,4 @@ resp, err := resdes.Arrange[*v1.UpdateUserRequest, *v1.UpdateUserResponse]().
 	WithServe(func(ctx context.Context, uur *v1.UpdateUserRequest) (*v1.UpdateUserResponse, error) {
 		return someBusinessLogic(ctx, uur)
 	}).Exec(context.Background(), req)
-```
-
-#### Error transformations 
-```go
 ```
